@@ -1,0 +1,133 @@
+{
+  "generated": "2026-05-24T15:49:13",
+  "sounding_hour": 21,
+  "sounding": [
+    {
+      "press": 1000.0,
+      "hght": 77.0,
+      "temp": 19.7,
+      "dwpt": 11.2,
+      "wdir": 186.0,
+      "wspd": 1.0
+    },
+    {
+      "press": 975.0,
+      "hght": 283.0,
+      "temp": 18.3,
+      "dwpt": 9.9,
+      "wdir": 193.0,
+      "wspd": 0.94
+    },
+    {
+      "press": 950.0,
+      "hght": 505.0,
+      "temp": 16.9,
+      "dwpt": 8.5,
+      "wdir": 193.0,
+      "wspd": 1.0
+    },
+    {
+      "press": 925.0,
+      "hght": 731.0,
+      "temp": 15.3,
+      "dwpt": 7.1,
+      "wdir": 193.0,
+      "wspd": 1.03
+    },
+    {
+      "press": 900.0,
+      "hght": 963.0,
+      "temp": 13.9,
+      "dwpt": 5.8,
+      "wdir": 187.0,
+      "wspd": 0.94
+    },
+    {
+      "press": 850.0,
+      "hght": 1442.0,
+      "temp": 10.7,
+      "dwpt": 2.8,
+      "wdir": 187.0,
+      "wspd": 1.03
+    },
+    {
+      "press": 800.0,
+      "hght": 1945.0,
+      "temp": 7.8,
+      "dwpt": 0.5,
+      "wdir": 217.0,
+      "wspd": 2.78
+    },
+    {
+      "press": 700.0,
+      "hght": 3028.0,
+      "temp": -0.8,
+      "dwpt": -4.5,
+      "wdir": 248.0,
+      "wspd": 12.67
+    },
+    {
+      "press": 600.0,
+      "hght": 4241.0,
+      "temp": -8.1,
+      "dwpt": -10.9,
+      "wdir": 257.0,
+      "wspd": 15.61
+    },
+    {
+      "press": 500.0,
+      "hght": 5642.0,
+      "temp": -14.2,
+      "dwpt": -18.0,
+      "wdir": 264.0,
+      "wspd": 15.42
+    },
+    {
+      "press": 400.0,
+      "hght": 7302.0,
+      "temp": -24.2,
+      "dwpt": -32.4,
+      "wdir": 268.0,
+      "wspd": 19.0
+    },
+    {
+      "press": 300.0,
+      "hght": 9332.0,
+      "temp": -40.5,
+      "dwpt": -50.3,
+      "wdir": 276.0,
+      "wspd": 14.75
+    }
+  ],
+  "venting": {
+    "today_am": null,
+    "today_pm": {
+      "vi": 46,
+      "cat": "FAIR"
+    },
+    "tomorrow": {
+      "vi": 41,
+      "cat": "FAIR"
+    },
+    "raw_line": "GOLDEN               NA/NA      NA      NA      46/FAIR  NA     NA      41/FAIR  NA     NA",
+    "bulletin_date": "24-MAY-2026"
+  },
+  "temps": {
+    "valley": 18.3,
+    "dogtooth": 7.0,
+    "white_wall": 3.9
+  },
+  "elevations": {
+    "valley": 785,
+    "dogtooth": 2060,
+    "white_wall": 2450
+  },
+  "score": 1,
+  "risk": "LOW",
+  "hints": [
+    "Venting Index FAIR (46) \u2014 marginal smoke dispersal",
+    "Valley\u2192Dogtooth (2060 m) \u0394T 11.3\u00b0C \u2248 normal (8.3\u00b0C)",
+    "Normal lapse below 850 hPa (19.7\u00b0C \u2192 10.7\u00b0C)"
+  ],
+  "verdict": "No inversion. Normal lapse rate. Air is mixing."
+}

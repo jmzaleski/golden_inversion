@@ -27,6 +27,9 @@ import requests
 # ── Configuration ──────────────────────────────────────────────────────────────
 
 OUTPUT_PATH  = Path("/var/www/golden/sounding.json")
+OUTPUT_PATH  = Path("./sounding.json")
+print("matz: hacking path\n");
+
 SOUNDING_HOUR = 21          # local hour for tonight's forecast sounding
 
 GOLDEN_LAT   = 51.30
