@@ -111,30 +111,44 @@ def fetch_sounding(target_hour: int) -> dict:
     Fetch GFS pressure-level sounding from Open-Meteo for Golden at
     today's target_hour (local).  Returns dict with numpy arrays.
     """
-    hourly_vars = []
+    # Open-Meteo pressure-level variable names follow the pattern used for
+    # surface variables: dewpoint (no underscore), windspeed, winddirection.
+    # Two requests keep the URL short and avoid any query-string length limits:
+    #   request A — temperature + dewpoint (for Skew-T profile)
+    #   request B — windspeed + winddirection + geopotential_height (for barbs/heights)
+    vars_A = []
+    vars_B = []
     for p in PRESSURE_LEVELS_HPA:
-        hourly_vars += [
-            f"temperature_{p}hPa",
-            f"dew_point_{p}hPa",
-            f"windspeed_{p}hPa",
-            f"winddirection_{p}hPa",
-            f"geopotential_height_{p}hPa",
-        ]
+        vars_A += [f"temperature_{p}hPa", f"dewpoint_{p}hPa"]
+        vars_B += [f"windspeed_{p}hPa", f"winddirection_{p}hPa",
+                   f"geopotential_height_{p}hPa"]
 
-    r = requests.get("https://api.open-meteo.com/v1/forecast", params={
+    common_params = {
         "latitude": GOLDEN_LAT,
         "longitude": GOLDEN_LON,
-        "hourly": ",".join(hourly_vars),
         "timezone": TIMEZONE,
         "forecast_days": 3,
         "models": "gfs_seamless",
-    }, timeout=30)
-    r.raise_for_status()
-    h = r.json()["hourly"]
+    }
+
+    rA = requests.get("https://api.open-meteo.com/v1/forecast",
+                      params={**common_params, "hourly": ",".join(vars_A)},
+                      timeout=30)
+    rA.raise_for_status()
+
+    rB = requests.get("https://api.open-meteo.com/v1/forecast",
+                      params={**common_params, "hourly": ",".join(vars_B)},
+                      timeout=30)
+    rB.raise_for_status()
+
+    # Merge both hourly dicts
+    hA = rA.json()["hourly"]
+    hB = rB.json()["hourly"]
+    h = {**hA, **hB}
 
     times = pd.to_datetime(h["time"])
     target = pd.Timestamp(datetime.date.today()) + pd.Timedelta(hours=target_hour)
-    idx = int((times - target).abs().argmin())
+    idx = int(np.argmin(np.abs([(t - target).total_seconds() for t in times])))
     valid_time = times[idx]
 
     def _val(key, i):
@@ -148,7 +162,7 @@ def fetch_sounding(target_hour: int) -> dict:
         t = _val(f"temperature_{p}hPa", idx)
         if t is None:
             continue
-        d = _val(f"dew_point_{p}hPa", idx)
+        d = _val(f"dewpoint_{p}hPa", idx)
         ws = _val(f"windspeed_{p}hPa", idx)
         wd = _val(f"winddirection_{p}hPa", idx)
         hgt = _val(f"geopotential_height_{p}hPa", idx)
@@ -601,6 +615,8 @@ def main() -> None:
             except Exception as exc:
                 results[name] = None
                 print(f"  ✗ {name:<12} failed: {exc}")
+                if name == "sounding":
+                    import traceback; traceback.print_exc()
 
     sounding = results["sounding"]
     valley_t = results["valley_t"]
