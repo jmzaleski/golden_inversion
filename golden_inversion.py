@@ -240,18 +240,31 @@ def fetch_venting_index() -> dict:
     Columns:  [7 AM VI/CAT  WND  MXGHT] [4 PM VI/CAT  WND  MXGHT] [TOMORROW VI/CAT  WND  MXGHT]
 
     Returns:
-        {'today_am': ViData, 'today_pm': ViData, 'tomorrow': ViData}
+        {'today_am': ViData, 'today_pm': ViData, 'tomorrow': ViData,
+         'raw_line': str, 'bulletin_date': str}
     """
-    result: dict = {"today_am": None, "today_pm": None, "tomorrow": None}
+    result: dict = {
+        "today_am": None, "today_pm": None, "tomorrow": None,
+        "raw_line": None, "bulletin_date": None,
+    }
     try:
         r = requests.get(VENTING_URL, timeout=15)
         r.raise_for_status()
-        m = re.search(r'GOLDEN\s+(.*)', r.text, re.IGNORECASE)
-        if not m:
+        text = r.text
+
+        # Capture bulletin issue date (e.g. "22-APRIL-2026")
+        date_m = re.search(r'(\d{1,2}-[A-Z]+-\d{4})', text, re.IGNORECASE)
+        if date_m:
+            result["bulletin_date"] = date_m.group(1).upper()
+
+        # Capture the full GOLDEN line verbatim
+        line_m = re.search(r'(GOLDEN\s+.*)', text, re.IGNORECASE)
+        if not line_m:
             return result
-        line = m.group(1)
-        # Each slot is  number/WORD  or  NA/NA
-        pairs = re.findall(r'(\d+|NA)/(POOR|FAIR|GOOD|NA)', line, re.IGNORECASE)
+        raw = line_m.group(1).rstrip()
+        result["raw_line"] = raw
+
+        pairs = re.findall(r'(\d+|NA)/(POOR|FAIR|GOOD|NA)', raw, re.IGNORECASE)
         for key, (vi_str, cat) in zip(["today_am", "today_pm", "tomorrow"], pairs[:3]):
             if vi_str.upper() != "NA":
                 result[key] = (int(vi_str), cat.upper())
@@ -411,12 +424,11 @@ def draw_skewt(fig: plt.Figure, sounding: dict, rect: tuple) -> None:
     skewt.plot_mixing_lines(alpha=0.15, colors="#0277BD", linewidths=0.7)
 
     # ── Station elevation reference lines ──
-    # Uses blended transform: x in axes coords, y in data (pressure) coords
     trans = blended_transform_factory(ax.transAxes, ax.transData)
     stations_ref = [
-        (GOLDEN_ELEV_M, "Golden valley (785 m)", "#BF6000"),
-        (DOGTOOTH_ELEV_M, "Dogtooth (2060 m)", "#1565C0"),
-        (WHITE_WALL_ELEV_M, "White Wall (2450 m)", "#6A1A9A"),
+        (GOLDEN_ELEV_M,    "Golden valley (785 m)", "#BF6000"),
+        (DOGTOOTH_ELEV_M,  "Dogtooth (2060 m)",     "#1565C0"),
+        (WHITE_WALL_ELEV_M,"White Wall (2450 m)",    "#6A1A9A"),
     ]
     for elev_m, label, colour in stations_ref:
         p_ref = elev_to_pressure(elev_m)
@@ -425,54 +437,130 @@ def draw_skewt(fig: plt.Figure, sounding: dict, rect: tuple) -> None:
                 color=colour, va="center", style="italic",
                 bbox=dict(facecolor="white", alpha=0.65, edgecolor="none", pad=1))
 
+    # ── Detect low-level inversion in the sounding ───────────────────────────
+    p_arr = sounding["pressure"]
+    t_arr = sounding["temperature"]
+    mask  = (p_arr >= 750) & (p_arr <= 1000)
+    p_low = p_arr[mask]
+    t_low = t_arr[mask]
+    inv_top_hpa = inv_bot_hpa = None
+    if len(p_low) >= 2:
+        order = np.argsort(p_low)[::-1]   # ascending altitude
+        p_s, t_s = p_low[order], t_low[order]
+        for i in range(len(t_s) - 1):
+            if t_s[i + 1] > t_s[i]:       # T increases with altitude = inversion
+                inv_bot_hpa = float(p_s[i])
+                inv_top_hpa = float(p_s[i + 1])
+                break                      # flag the lowest (shallowest) inversion
+
+    if inv_bot_hpa is not None:
+        # Shade the inversion layer
+        ax.axhspan(inv_bot_hpa, inv_top_hpa,
+                   color="#FF8F00", alpha=0.18, zorder=1)
+        ax.text(0.99, (inv_bot_hpa + inv_top_hpa) / 2,
+                "inversion layer", transform=trans,
+                fontsize=7, color="#E65100", va="center", ha="right",
+                fontweight="bold",
+                bbox=dict(facecolor="white", alpha=0.75, edgecolor="#E65100",
+                          pad=1.5, linewidth=0.8))
+
+    # ── How-to-read annotation ───────────────────────────────────────────────
+    guide = (
+        "HOW TO READ THIS CHART\n"
+        "Red line = temperature at each altitude\n"
+        "Blue dashed = dewpoint (moisture)\n"
+        "\n"
+        "NORMAL: red line leans LEFT going up\n"
+        "  (air gets colder with altitude)\n"
+        "INVERSION: red line leans RIGHT going up\n"
+        "  (air gets warmer — smoke gets trapped)"
+    )
+    ax.text(0.98, 0.02, guide,
+            transform=ax.transAxes,
+            fontsize=6.8, va="bottom", ha="right",
+            color="#333",
+            linespacing=1.5,
+            bbox=dict(facecolor="white", alpha=0.88,
+                      edgecolor="#BBBBBB", boxstyle="round,pad=0.5",
+                      linewidth=0.8))
+
     # ── Axis limits & formatting ──
     ax.set_ylim(1050, 300)
     ax.set_xlim(-40, 40)
     valid_str = sounding["valid_time"].strftime("%a %b %-d  %H:%M") + " local"
-    ax.set_title(f"GFS Sounding — {valid_str}", fontsize=9.5, fontweight="bold")
-    ax.set_xlabel("Temperature (°C)", fontsize=8.5)
-    ax.set_ylabel("Pressure (hPa)", fontsize=8.5)
-    ax.legend(fontsize=8, loc="upper right", framealpha=0.85)
+    ax.set_title(
+        f"GFS weather forecast — {valid_str}\n"
+        f"Atmospheric sounding (temperature vs. altitude)",
+        fontsize=8, fontweight="bold", linespacing=1.5)
+    ax.set_xlabel("Temperature (°C)", fontsize=8)
+    ax.set_ylabel("Pressure (hPa)", fontsize=8)
+    ax.legend(fontsize=7.5, loc="upper right", framealpha=0.85)
 
 
 def draw_venting_panel(ax: plt.Axes, vi: dict) -> None:
-    """Compact Venting Index display for today (AM, PM) and tomorrow."""
-    ax.set_facecolor("#F8F8F8")
+    """
+    Compact venting panel: raw bulletin line in monospace at top,
+    then one tight coloured label per time slot with a plain-language note.
+    """
+    VI_MEANING = {
+        "POOR": "Smoke trapped in valley — avoid burning",
+        "FAIR": "Some dispersal — burn with caution",
+        "GOOD": "Air mixing well — normal conditions",
+    }
+
+    ax.set_facecolor("#2A2A3E")
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     ax.axis("off")
-    ax.set_title("BC Venting Index — Golden", fontsize=9.5, fontweight="bold", pad=5)
 
-    slots = [
-        ("Today  7 AM", vi["today_am"]),
-        ("Today  4 PM", vi["today_pm"]),
-        ("Tomorrow 4 PM", vi["tomorrow"]),
+    # ── Source label ──────────────────────────────────────────────────────────
+    ax.text(0.02, 1.0, "BC Ministry of Environment — official venting forecast",
+            fontsize=6.5, color="#666", va="bottom", style="italic",
+            transform=ax.transAxes)
+
+    # ── Raw bulletin block ────────────────────────────────────────────────────
+    date_str = vi.get("bulletin_date") or ""
+    raw_line = vi.get("raw_line") or "GOLDEN  (unavailable)"
+    header   = (
+        f"           7 AM    4 PM  TOMORROW\n"
+        f"{'─'*36}\n"
+        f"{raw_line}"
+    )
+    ax.text(0.02, 0.99, header,
+            fontfamily="monospace", fontsize=6.8, va="top", color="#222",
+            linespacing=1.55,
+            bbox=dict(facecolor="#EBEBEB", edgecolor="#BBBBBB",
+                      boxstyle="round,pad=0.35", linewidth=0.7))
+
+    ax.axhline(0.48, color="#555577", lw=0.8)
+
+    # ── TONIGHT / TOMORROW buttons ────────────────────────────────────────────
+    rows = [
+        ("TONIGHT:",  vi.get("today_pm") or vi.get("today_am")),
+        ("TOMORROW:", vi.get("tomorrow")),
     ]
-    y_centres = [0.80, 0.50, 0.20]
-
-    for yc, (slot_label, data) in zip(y_centres, slots):
-        ax.text(0.05, yc + 0.14, slot_label, fontsize=8,
-                color="#555", va="bottom", fontweight="bold")
-        box = mpatches.FancyBboxPatch(
-            (0.05, yc - 0.08), 0.90, 0.21,
-            boxstyle="round,pad=0.01",
-            facecolor=(vi_colour(data[0], data[1]) if data else "#AAAAAA"),
-            edgecolor="white", alpha=0.88,
-            transform=ax.transAxes, clip_on=False,
-        )
-        ax.add_patch(box)
+    y_positions = [0.38, 0.16]
+    for (row_label, data), y in zip(rows, y_positions):
+        ax.text(0.03, y + 0.03, row_label,
+                fontsize=9, color="white", va="center", fontweight="bold")
         if data:
             vi_val, cat = data
-            ax.text(0.50, yc + 0.025, f"{vi_val}  {cat}",
-                    fontsize=14, color="white", ha="center", va="center",
-                    fontweight="bold",
-                    path_effects=[pe.withStroke(linewidth=2.5, foreground="#333")])
+            col     = vi_colour(vi_val, cat)
+            meaning = VI_MEANING.get(cat, "")
+            ax.text(0.36, y + 0.03, f"  {vi_val}  {cat}  ",
+                    fontsize=10, color="white", va="center", fontweight="bold",
+                    bbox=dict(facecolor=col, edgecolor="none",
+                              boxstyle="round,pad=0.3", alpha=0.92))
+            ax.text(0.36, y - 0.09, meaning,
+                    fontsize=7, color="#CCCCCC", va="top")
         else:
-            ax.text(0.50, yc + 0.025, "N/A", fontsize=12,
-                    color="#EEEEEE", ha="center", va="center")
+            ax.text(0.36, y + 0.03, "  N/A  ",
+                    fontsize=10, color="#888", va="center",
+                    bbox=dict(facecolor="#DDDDDD", edgecolor="none",
+                              boxstyle="round,pad=0.3"))
 
     ax.text(0.5, 0.01, "0–33 POOR  •  34–54 FAIR  •  55–100 GOOD",
-            fontsize=6.5, color="#777", ha="center", va="bottom")
+            fontsize=6, color="#9999BB", ha="center", va="bottom")
 
 
 def draw_temp_profile(
@@ -482,96 +570,187 @@ def draw_temp_profile(
     ww_t: Optional[float],
 ) -> None:
     """
-    Temperature vs. elevation profile.
-    Observed dots connected by a solid line; normal-lapse reference dashed.
-    Orange shading marks the region where observed air is warmer than
-    the normal lapse rate predicts (inversion signal).
+    Horizontal thermometer layout — elevation on Y, temperature on X.
+
+    For each non-valley station:
+      • A thin bar from the EXPECTED temperature (open diamond on lapse line)
+        to the OBSERVED temperature (filled circle) makes the gap unmissable.
+      • The bar is orange when observed > expected (inversion) and blue when
+        observed < expected (normal or super-adiabatic).
+      • The gap is labelled in °C with a plain-English sign.
+
+    The valley station anchors the lapse line; its bar runs from 0 °C to the
+    observed temperature so it reads like a traditional thermometer.
     """
     ax.set_facecolor("#EFF4FB")
-    ax.set_title("Temp Profile vs. Normal Lapse", fontsize=9.5, fontweight="bold", pad=5)
+    ax.set_title("Valley vs. Mountain Temps", fontsize=9.5, fontweight="bold", pad=5)
     ax.set_ylabel("Elevation (m)", fontsize=8.5)
-    ax.set_xlabel("Temperature (°C)", fontsize=8.5)
     ax.tick_params(labelsize=7.5)
 
     stations = []
     if valley_t is not None:
-        stations.append((valley_t, GOLDEN_ELEV_M, "Golden\n~785 m", "#BF6000"))
+        stations.append((valley_t, GOLDEN_ELEV_M,    "Golden ~785 m",    "#BF6000"))
     if dog_t is not None:
-        stations.append((dog_t, DOGTOOTH_ELEV_M, "Dogtooth\n2060 m", "#1565C0"))
+        stations.append((dog_t,    DOGTOOTH_ELEV_M,  "Dogtooth 2060 m",  "#1565C0"))
     if ww_t is not None:
-        stations.append((ww_t, WHITE_WALL_ELEV_M, "White Wall\n2450 m", "#6A1A9A"))
+        stations.append((ww_t,     WHITE_WALL_ELEV_M,"White Wall 2450 m","#6A1A9A"))
 
     if not stations:
-        ax.text(0.5, 0.5, "No mountain data available",
+        ax.text(0.5, 0.5, "No station data available",
                 ha="center", va="center", transform=ax.transAxes, color="#999")
         return
 
-    all_temps = [s[0] for s in stations]
-    t_min = min(all_temps) - 4
-    t_max = max(all_temps) + 4
-    ax.set_xlim(t_min, t_max)
-    ax.set_ylim(550, 2700)
+    all_obs   = [s[0] for s in stations]
+    all_elevs = [s[1] for s in stations]
 
-    # ── Normal lapse line from valley ────────────────────────────────────────
+    # Compute expected temps at every station from valley anchor
     if valley_t is not None:
-        elev_line = np.linspace(GOLDEN_ELEV_M, WHITE_WALL_ELEV_M + 100, 80)
-        temp_line = [expected_temp(valley_t, GOLDEN_ELEV_M, e) for e in elev_line]
-        ax.plot(temp_line, elev_line, "--", color="#9E9E9E", lw=1.5,
-                label=f"Normal lapse ({NORMAL_LAPSE_RATE_C_PER_KM}°C/km)", zorder=3)
+        all_expected = [expected_temp(valley_t, GOLDEN_ELEV_M, e) for e in all_elevs]
+    else:
+        all_expected = all_obs[:]   # no reference — nothing to compare
 
-        # Shade inversion zone: between normal-lapse line and observed profile
-        # Build a common elevation grid and interpolate observed temps
-        obs_elevs = [s[1] for s in stations]
-        obs_temps = [s[0] for s in stations]
-        if len(obs_elevs) >= 2:
-            obs_interp = np.interp(elev_line, sorted(obs_elevs),
-                                   [t for _, t in sorted(zip(obs_elevs, obs_temps))])
-            normal_interp = np.array(temp_line)
-            # Inversion where observed > normal (valley is warmer than it should be)
-            inv_mask = obs_interp > normal_interp
-            if inv_mask.any():
-                ax.fill_betweenx(elev_line, normal_interp, obs_interp,
-                                 where=inv_mask, color="#FF8F00", alpha=0.30,
-                                 label="Inversion zone", zorder=2)
+    # X-axis spans observed AND expected, with a little breathing room
+    x_all = all_obs + all_expected
+    x_lo  = min(x_all) - 3
+    x_hi  = max(x_all) + 6          # extra room for labels on the right
+    ax.set_xlim(x_lo, x_hi)
 
-    # ── Observed profile ─────────────────────────────────────────────────────
-    obs_temps = [s[0] for s in stations]
-    obs_elevs = [s[1] for s in stations]
-    obs_colours = [s[3] for s in stations]
+    y_lo  = min(all_elevs) - 250
+    y_hi  = max(all_elevs) + 350
+    ax.set_ylim(y_lo, y_hi)
 
-    ax.plot(obs_temps, obs_elevs, "-", color="#212121", lw=2.2, zorder=5)
-    for temp, elev, label, colour in stations:
-        ax.plot(temp, elev, "o", ms=11, color=colour, zorder=6,
-                markeredgecolor="white", markeredgewidth=1.2)
-        ha = "left" if temp <= np.mean(all_temps) else "right"
-        xoff = 0.4 if ha == "left" else -0.4
-        ax.text(temp + xoff, elev, f"{temp:.1f}°C  {label}",
-                fontsize=7.5, va="center", ha=ha, color=colour, fontweight="bold")
+    # ── Normal lapse rate reference line (continuous) ─────────────────────────
+    if valley_t is not None:
+        lapse_elevs = np.linspace(GOLDEN_ELEV_M, max(all_elevs) + 150, 80)
+        lapse_temps = [expected_temp(valley_t, GOLDEN_ELEV_M, e) for e in lapse_elevs]
+        ax.plot(lapse_temps, lapse_elevs, "--", color="#9E9E9E", lw=1.4, zorder=3,
+                label="Normal decrease in temp with altitude")
 
-    ax.axvline(0, color="#BDBDBD", lw=0.8, ls="--", alpha=0.6)
-    ax.grid(axis="x", alpha=0.2)
-    ax.legend(fontsize=7.5, loc="upper right", framealpha=0.85)
+    # ── Per-station thermometer bars and labels ───────────────────────────────
+    bar_height = (y_hi - y_lo) * 0.04   # half-height of each horizontal bar
+
+    for i, (obs, elev, name, colour) in enumerate(stations):
+        exp = all_expected[i]
+        is_valley = (elev == GOLDEN_ELEV_M)
+
+        if is_valley:
+            # Valley is the lapse-line anchor — no comparison bar, just dot + label
+            ax.plot(obs, elev, "o", ms=10, color=colour, zorder=6,
+                    markeredgecolor="white", markeredgewidth=1.2)
+            ax.text(obs + 0.6, elev, f"{obs:.1f}°C  {name}  (anchor)",
+                    fontsize=8, va="center", color=colour, fontweight="bold")
+        else:
+            gap = obs - exp   # positive = warmer than expected = inversion signal
+            inv = gap > 0
+
+            # Bar strictly from lapse-line (expected) to observed dot
+            # Red = inversion (too warm aloft); grey = normal or super-adiabatic
+            true_inv  = (valley_t is not None) and (obs > valley_t)
+            if true_inv:
+                bar_col, bar_alpha = "#C62828", 0.85   # red   — actual inversion
+            elif inv:
+                bar_col, bar_alpha = "#F48FB1", 0.80   # pink  — warmer than lapse but below valley
+            else:
+                bar_col, bar_alpha = "#78909C", 0.45   # grey  — normal
+            ax.barh(elev, abs(gap), left=min(obs, exp),
+                    height=bar_height, color=bar_col, alpha=bar_alpha,
+                    zorder=4, edgecolor="none")
+
+            # Filled circle at observed temperature
+            ax.plot(obs, elev, "o", ms=10, color=colour, zorder=6,
+                    markeredgecolor="white", markeredgewidth=1.2)
+
+            # Gap label right of the rightmost point
+            label_x      = max(obs, exp) + 0.4
+            sign         = "▲ warmer than expected" if inv else "▼ cooler than expected"
+            colour_label = "#C62828" if true_inv else ("#C2185B" if inv else "#546E7A")
+            ax.text(label_x, elev,
+                    f"{obs:.1f}°C  {name}\n{sign} by {abs(gap):.1f}°C",
+                    fontsize=7.5, va="center", color=colour_label, fontweight="bold",
+                    linespacing=1.4)
+
+    # ── Valley temperature vertical line ─────────────────────────────────────
+    # The KEY reference: any mountain dot to the RIGHT of this = true inversion
+    if valley_t is not None:
+        ax.axvline(valley_t, color="#BF6000", lw=1.8, ls="-.", alpha=0.85, zorder=3)
+        ax.text(valley_t + 0.2, y_hi - (y_hi - y_lo) * 0.04,
+                "← valley temp\n   (stations RIGHT of here = inversion)",
+                fontsize=6.5, color="#BF6000", va="top", style="italic")
+
+    # ── Plain-English verdict ─────────────────────────────────────────────────
+    mountain_temps = [(obs, elev) for obs, elev, _, _ in stations
+                      if elev != GOLDEN_ELEV_M]
+    if valley_t is not None and mountain_temps:
+        any_true_inversion  = any(obs > valley_t for obs, _ in mountain_temps)
+        all_lapse_anomalous = all(
+            (valley_t - obs) < NORMAL_LAPSE_RATE_C_PER_KM * (elev - GOLDEN_ELEV_M) / 1000.0 * 0.6
+            for obs, elev in mountain_temps
+        )
+
+        if any_true_inversion:
+            verdict      = "🚨 Dammit — there's an inversion.\n    Don't light that wood stove."
+            verdict_col  = "#B71C1C"
+            verdict_bg   = "#FFEBEE"
+        elif all_lapse_anomalous:
+            verdict      = "⚠️  No inversion yet, but lapse rate is\n    weak — smoke won't mix well."
+            verdict_col  = "#E65100"
+            verdict_bg   = "#FFF3E0"
+        else:
+            verdict      = "✅  No inversion. Normal lapse rate.\n    Air is mixing."
+            verdict_col  = "#1B5E20"
+            verdict_bg   = "#E8F5E9"
+
+        ax.text(0.02, 0.97, verdict,
+                transform=ax.transAxes, fontsize=8.5, fontweight="bold",
+                color=verdict_col, va="top", linespacing=1.5,
+                bbox=dict(facecolor=verdict_bg, edgecolor=verdict_col,
+                          alpha=0.92, boxstyle="round,pad=0.4", linewidth=1.2))
+
+    # ── Direction hint along the bottom ──────────────────────────────────────
+    ax.text(0.01, 0.02,
+            "Red bar = warmer than normal lapse rate (stability signal)",
+            transform=ax.transAxes, fontsize=6.5, color="#777",
+            va="bottom", style="italic")
+
+    # ── Legend ────────────────────────────────────────────────────────────────
+    inv_patch   = mpatches.Patch(color="#C62828", alpha=0.85,
+                                 label="Warmer than valley = true inversion")
+    pink_patch  = mpatches.Patch(color="#F48FB1", alpha=0.80,
+                                 label="Warmer than lapse, cooler than valley = unstable")
+    norm_patch  = mpatches.Patch(color="#78909C", alpha=0.45,
+                                 label="Cooler than lapse = normal")
+    lapse_line  = plt.Line2D([0], [0], ls="--", color="#9E9E9E", lw=1.4,
+                             label="Normal decrease in temp with altitude")
+    ax.legend(handles=[lapse_line, norm_patch, pink_patch, inv_patch],
+              fontsize=6.5, loc="lower left", framealpha=0.85)
 
 
 def draw_risk_banner(ax: plt.Axes, score: int, hints: list) -> None:
-    """Full-width inversion risk assessment banner."""
+    """Full-width inversion risk assessment banner with stacked hint bullets."""
     label, colour, emoji = risk_label(score)
     ax.set_facecolor(colour)
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     ax.axis("off")
 
-    ax.text(0.01, 0.78,
-            f"{emoji}  EVENING INVERSION RISK:  {label}   ({score}/6 points)",
-            fontsize=13, fontweight="bold", color="white", va="top",
-            path_effects=[pe.withStroke(linewidth=3, foreground=colour)])
+    # Headline left
+    ax.text(0.01, 0.92,
+            f"EVENING INVERSION RISK:  {label}   ({score}/6)",
+            fontsize=12, fontweight="bold", color="white", va="top")
 
-    summary = "   •   ".join(hints)
-    # Wrap long summaries manually
-    max_chars = 140
-    if len(summary) > max_chars:
-        summary = summary[:max_chars] + "…"
-    ax.text(0.01, 0.32, summary, fontsize=8, color="#FFECB3", va="top")
+    # Hint bullets — one per line, two columns if more than 2 hints
+    bullet_lines = [f"• {h}" for h in hints]
+    mid = (len(bullet_lines) + 1) // 2
+    col1 = "\n".join(bullet_lines[:mid])
+    col2 = "\n".join(bullet_lines[mid:])
+
+    ax.text(0.01, 0.52, col1,
+            fontsize=7.8, color="white", va="top", linespacing=1.6,
+            path_effects=[pe.withStroke(linewidth=1.5, foreground=colour)])
+    if col2:
+        ax.text(0.51, 0.52, col2,
+                fontsize=7.8, color="white", va="top", linespacing=1.6,
+                path_effects=[pe.withStroke(linewidth=1.5, foreground=colour)])
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -636,41 +815,38 @@ def main() -> None:
         print(f"   • {h}")
 
     # ── Figure layout ──────────────────────────────────────────────────────────
-    # All positions in figure-fraction coordinates [left, bottom, width, height]
+    # Left column  (FORECASTS, narrow):   x 0.02 → 0.32
+    # Right column (CURRENT DATA, wide):  x 0.36 → 0.97
     fig = plt.figure(figsize=(15, 10), facecolor="#1C1C2E")
 
     today_str = datetime.date.today().strftime("%A, %B %-d, %Y")
-    fig.text(0.5, 0.975,
-             f"Golden, BC — Evening Temperature-Inversion Outlook — {today_str}",
-             ha="center", va="top", fontsize=15, fontweight="bold", color="white")
+    fig.text(0.5, 0.980,
+             f"Golden, BC — Temperature Inversion Outlook — {today_str}",
+             ha="center", va="top", fontsize=14, fontweight="bold", color="white")
 
-    # Sub-heading with current readings
-    def _fmt(v, unit="°C"):
-        return f"{v:.1f}{unit}" if v is not None else "N/A"
+    fig.text(0.02, 0.945, "FORECASTS",
+             fontsize=11, fontweight="bold", color="#90CAF9", va="top")
+    fig.text(0.36, 0.945, "CURRENT CONDITIONS",
+             fontsize=11, fontweight="bold", color="#A5D6A7", va="top")
 
-    vi_now = vi.get("today_pm") or vi.get("today_am")
-    vi_str = f"{vi_now[0]} ({vi_now[1]})" if vi_now else "N/A"
-    fig.text(
-        0.5, 0.940,
-        f"Valley: {_fmt(valley_t)}   •   Dogtooth {DOGTOOTH_ELEV_M} m: {_fmt(dog_t)}"
-        f"   •   White Wall {WHITE_WALL_ELEV_M} m: {_fmt(ww_t)}"
-        f"   •   Venting Index: {vi_str}",
-        ha="center", va="top", fontsize=9.5, color="#CCCCDD",
-    )
+    line = plt.Line2D([0.335, 0.335], [0.02, 0.94],
+                      transform=fig.transFigure,
+                      color="#444466", linewidth=1.0, linestyle="--")
+    fig.add_artist(line)
 
-    # Skew-T — left 60 %, most of vertical space
-    draw_skewt(fig, sounding, rect=(0.03, 0.14, 0.56, 0.77))
-
-    # Venting Index — top-right quadrant
-    ax_vi = fig.add_axes([0.63, 0.55, 0.35, 0.36])
+    # ── LEFT: Venting panel ───────────────────────────────────────────────────
+    ax_vi = fig.add_axes([0.02, 0.68, 0.30, 0.23])
     draw_venting_panel(ax_vi, vi)
 
-    # Temp profile — bottom-right quadrant
-    ax_tp = fig.add_axes([0.63, 0.14, 0.35, 0.37])
+    # ── LEFT: Skew-T — portrait (tall and narrow) ─────────────────────────────
+    draw_skewt(fig, sounding, rect=(0.02, 0.14, 0.30, 0.52))
+
+    # ── RIGHT: Temperature profile ────────────────────────────────────────────
+    ax_tp = fig.add_axes([0.36, 0.14, 0.61, 0.77])
     draw_temp_profile(ax_tp, valley_t, dog_t, ww_t)
 
-    # Risk banner — full-width bottom strip
-    ax_risk = fig.add_axes([0.03, 0.03, 0.95, 0.09])
+    # ── BOTTOM: Risk banner ────────────────────────────────────────────────────
+    ax_risk = fig.add_axes([0.02, 0.02, 0.96, 0.11])
     draw_risk_banner(ax_risk, score, hints)
 
     # ── Save ───────────────────────────────────────────────────────────────────
