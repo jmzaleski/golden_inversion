@@ -1,0 +1,13 @@
+[project]
+name = "golden-inversion"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.9"
+dependencies = [
+    "argparse>=1.4.0",
+    "matplotlib>=3.9.4",
+    "metpy>=1.6.3",
+    "numpy>=2.0.2",
+    "pandas>=2.3.3",
+    "requests>=2.32.5",
+]
