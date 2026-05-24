@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Golden BC — Temperature Inversion Outlook</title>
+
+<link rel="stylesheet" href="https://unpkg.com/skewt/dist/skewt.css">
+<script src="https://unpkg.com/skewt/dist/index.iife.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+
+<style>
+  :root {
+    --bg:        #12121f;
+    --panel:     #1e1e32;
+    --border:    #2e2e4a;
+    --text:      #e8e8f0;
+    --muted:     #8888aa;
+    --blue:      #7eb8f7;
+    --green:     #7dd9a0;
+    --red:       #e05555;
+    --pink:      #f4a0b0;
+    --orange:    #f0a040;
+    --poor:      #c62828;
+    --fair:      #e65100;
+    --good:      #2e7d32;
+    --font-mono: 'Courier New', Courier, monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Georgia', serif;
+    font-size: 13px;
+    min-height: 100vh;
+  }
+
+  /* ── Header ─────────────────────────────────────────────────────────── */
+  .header {
+    padding: 12px 20px 8px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    gap: 20px;
+  }
+  .header h1 {
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--text);
+  }
+  .header .subtitle {
+    font-size: 11px;
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  /* ── Main grid ───────────────────────────────────────────────────────── */
+  .main {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    grid-template-rows: 1fr;
+    grid-template-areas: "left right";
+    gap: 0;
+    height: calc(100vh - 100px);   /* fills viewport below header + banner */
+    min-height: 550px;
+  }
+
+  /* ── Left column: FORECASTS ──────────────────────────────────────────── */
+  .col-left {
+    grid-area: left;
+    border-right: 1px dashed var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  .col-header {
+    padding: 6px 12px 4px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+  }
+  .col-header.forecast { color: var(--blue); }
+  .col-header.data     { color: var(--green); }
+
+  /* ── Venting panel ───────────────────────────────────────────────────── */
+  .venting-panel {
+    background: var(--panel);
+    padding: 10px 12px 8px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .venting-source {
+    font-size: 9px;
+    color: var(--muted);
+    font-style: italic;
+    margin-bottom: 6px;
+  }
+  .venting-raw {
+    font-family: var(--font-mono);
+    font-size: 8px;
+    color: #aaa;
+    background: #0e0e1a;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 5px 7px;
+    line-height: 1.6;
+    margin-bottom: 8px;
+    white-space: pre;
+  }
+  .venting-divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 4px 0 8px;
+  }
+  .venting-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+  }
+  .venting-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: white;
+    width: 72px;
+    flex-shrink: 0;
+    letter-spacing: 0.05em;
+  }
+  .venting-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    color: white;
+    letter-spacing: 0.04em;
+  }
+  .venting-meaning {
+    font-size: 9px;
+    color: var(--muted);
+    line-height: 1.4;
+    flex: 1;
+  }
+  .badge-poor { background: var(--poor); }
+  .badge-fair { background: var(--fair); }
+  .badge-good { background: var(--good); }
+  .venting-scale {
+    font-size: 8.5px;
+    color: var(--muted);
+    margin-top: 4px;
+    text-align: center;
+  }
+
+  /* ── SkewT container ─────────────────────────────────────────────────── */
+  .skewt-wrapper {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    min-height: 0;
+  }
+  #skewt-container {
+    width: 100%;
+    height: 100%;
+  }
+  /* Override skewt-js defaults for dark theme */
+  .skewt-container {
+    --skewt-temp-color:    #e05555;
+    --skewt-dwpt-color:    #7eb8f7;
+    --skewt-grid-color:    #2e2e4a;
+    --skewt-zero-color:    #4a4a6a;
+    --skewt-axis-color:    #8888aa;
+    --skewt-barb-color:    #aaaacc;
+    --skewt-font-size:     10px;
+    background:            var(--panel) !important;
+  }
+
+  /* Reading guide overlay */
+  .skewt-guide {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    background: rgba(14,14,26,0.88);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 7px 9px;
+    font-size: 9px;
+    color: var(--muted);
+    line-height: 1.6;
+    max-width: 170px;
+    pointer-events: none;
+  }
+  .skewt-guide strong {
+    color: var(--text);
+    display: block;
+    margin-bottom: 3px;
+    font-size: 9.5px;
+  }
+  .skewt-guide .inv-highlight { color: var(--red); font-weight: bold; }
+
+  /* Inversion annotation badge */
+  .skewt-inv-badge {
+    position: absolute;
+    top: 50%;
+    left: 8px;
+    transform: translateY(-50%);
+    background: rgba(224,85,85,0.2);
+    border: 1px solid var(--red);
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 9px;
+    color: var(--red);
+    font-weight: 700;
+    pointer-events: none;
+    display: none;   /* shown by JS if inversion detected */
+  }
+
+  /* ── Right column: CURRENT DATA ──────────────────────────────────────── */
+  .col-right {
+    grid-area: right;
+    display: flex;
+    flex-direction: column;
+  }
+  .profile-panel {
+    flex: 1;
+    padding: 12px 16px 8px;
+    min-height: 0;
+    position: relative;
+  }
+  #temp-profile-svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  /* ── Risk banner ─────────────────────────────────────────────────────── */
+  .risk-banner {
+    height: 64px;
+    display: flex;
+    align-items: stretch;
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .risk-score-block {
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    gap: 12px;
+    flex-shrink: 0;
+    border-right: 1px solid rgba(255,255,255,0.15);
+  }
+  .risk-label {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: white;
+  }
+  .risk-score-num {
+    font-size: 11px;
+    color: rgba(255,255,255,0.7);
+  }
+  .risk-hints {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 0 16px;
+    gap: 2px;
+  }
+  .hint-line {
+    font-size: 10px;
+    color: rgba(255,255,255,0.85);
+    line-height: 1.5;
+  }
+  .hint-line::before {
+    content: '• ';
+    opacity: 0.6;
+  }
+
+  /* ── Verdict box (in temp profile panel) ────────────────────────────── */
+  .verdict-box {
+    position: absolute;
+    top: 16px;
+    left: 16px;
+    background: rgba(14,14,26,0.92);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.5;
+    border-width: 1px;
+    border-style: solid;
+    max-width: 280px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════ HEADER -->
+<div class="header">
+  <h1>Golden, BC — Temperature Inversion Outlook</h1>
+  <span class="subtitle" id="header-date">Loading…</span>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ MAIN GRID -->
+<div class="main">
+
+  <!-- LEFT: FORECASTS -->
+  <div class="col-left">
+    <div class="col-header forecast">Forecasts</div>
+
+    <!-- Venting panel -->
+    <div class="venting-panel" id="venting-panel">
+      <!-- populated by JS -->
+    </div>
+
+    <!-- Skew-T -->
+    <div class="skewt-wrapper">
+      <div id="skewt-container"></div>
+      <div class="skewt-guide">
+        <strong>How to read this chart</strong>
+        Red line = temperature at each altitude<br>
+        Blue dashed = dewpoint (moisture)<br><br>
+        <span class="inv-highlight">INVERSION:</span> red line leans<br>
+        <em>right</em> going upward<br>
+        (warmer air above — smoke trapped)<br><br>
+        NORMAL: red line leans <em>left</em><br>
+        (air cools with altitude)
+      </div>
+      <div class="skewt-inv-badge" id="inv-badge">⚠ Inversion layer detected</div>
+    </div>
+  </div>
+
+  <!-- RIGHT: CURRENT CONDITIONS -->
+  <div class="col-right">
+    <div class="col-header data">Current Conditions</div>
+    <div class="profile-panel">
+      <svg id="temp-profile-svg"></svg>
+      <div class="verdict-box" id="verdict-box">…</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ RISK BANNER -->
+<div class="risk-banner" id="risk-banner">
+  <!-- populated by JS -->
+</div>
+
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+//  MOCK DATA  (replace with API call in production)
+// ═══════════════════════════════════════════════════════════════════
+
+const DATA = {
+  sounding: [
+    // true inversion scenario: temp increases from 925→900 hPa
+    { press:1000, hght: 110, temp: -2.0, dwpt:  -8.0, wdir:200, wspd: 5/3.6 },
+    { press: 975, hght: 330, temp: -1.5, dwpt:  -9.0, wdir:210, wspd: 8/3.6 },
+    { press: 950, hght: 550, temp: -0.5, dwpt: -10.0, wdir:220, wspd:10/3.6 },
+    { press: 925, hght: 780, temp:  0.5, dwpt: -11.0, wdir:230, wspd:12/3.6 },
+    { press: 900, hght:1010, temp:  1.0, dwpt: -12.0, wdir:240, wspd:15/3.6 },
+    { press: 850, hght:1460, temp: -1.0, dwpt: -14.0, wdir:250, wspd:20/3.6 },
+    { press: 800, hght:1950, temp: -5.0, dwpt: -18.0, wdir:260, wspd:25/3.6 },
+    { press: 700, hght:3010, temp:-12.0, dwpt: -25.0, wdir:270, wspd:35/3.6 },
+    { press: 600, hght:4200, temp:-22.0, dwpt: -32.0, wdir:280, wspd:45/3.6 },
+    { press: 500, hght:5580, temp:-32.0, dwpt: -40.0, wdir:290, wspd:55/3.6 },
+  ],
+  venting: {
+    tonight:  { vi: 28, cat: "POOR" },
+    tomorrow: { vi: 60, cat: "GOOD" },
+    raw_line: "GOLDEN  NA/NA  NA  NA   28/POOR  NA  NA   60/GOOD  NA  NA",
+    bulletin_date: "15-JANUARY-2025"
+  },
+  temps: { valley: 2.0, dogtooth: 3.5, white_wall: 5.0 },
+  elevations: { valley: 785, dogtooth: 2060, white_wall: 2450 },
+  score: 6,
+  hints: [
+    "Venting Index POOR (28) — smoke traps easily in valleys",
+    "Valley→Dogtooth ΔT only −1.5°C (normal ≈ −8.3°C) — strong inversion",
+    "Sounding shows temperature INVERSION below 850 hPa"
+  ]
+};
+
+const LAPSE_RATE = 6.5;   // °C per km
+
+// ─── Helpers ───────────────────────────────────────────────────────
+function expectedTemp(valleyT, valleyElev, targetElev) {
+  return valleyT - LAPSE_RATE * (targetElev - valleyElev) / 1000;
+}
+
+function viClass(cat) {
+  return { POOR: 'badge-poor', FAIR: 'badge-fair', GOOD: 'badge-good' }[cat] || 'badge-fair';
+}
+
+function viMeaning(cat) {
+  return {
+    POOR: 'Smoke trapped in valley — avoid burning',
+    FAIR: 'Some dispersal — burn with caution',
+    GOOD: 'Air mixing well — normal conditions',
+  }[cat] || '';
+}
+
+// ─── Header date ───────────────────────────────────────────────────
+document.getElementById('header-date').textContent =
+  new Date().toLocaleDateString('en-CA', {weekday:'long', year:'numeric', month:'long', day:'numeric'})
+  + ' — GFS forecast valid tonight 21:00 local';
+
+// ═══════════════════════════════════════════════════════════════════
+//  VENTING PANEL
+// ═══════════════════════════════════════════════════════════════════
+function renderVenting(v) {
+  const el = document.getElementById('venting-panel');
+  el.innerHTML = `
+    <div class="venting-source">BC Ministry of Environment — official venting forecast</div>
+    <div class="venting-raw">           7 AM    4 PM  TOMORROW\n${'─'.repeat(36)}\n${v.raw_line}</div>
+    <hr class="venting-divider">
+    ${renderVentingRow('TONIGHT:', v.tonight)}
+    ${renderVentingRow('TOMORROW:', v.tomorrow)}
+    <div class="venting-scale">0–33 POOR &nbsp;•&nbsp; 34–54 FAIR &nbsp;•&nbsp; 55–100 GOOD</div>
+  `;
+}
+
+function renderVentingRow(label, data) {
+  if (!data) return `
+    <div class="venting-row">
+      <span class="venting-label">${label}</span>
+      <span class="venting-badge" style="background:#444">N/A</span>
+    </div>`;
+  return `
+    <div class="venting-row">
+      <span class="venting-label">${label}</span>
+      <span class="venting-badge ${viClass(data.cat)}">${data.vi} &nbsp;${data.cat}</span>
+      <span class="venting-meaning">${viMeaning(data.cat)}</span>
+    </div>`;
+}
+
+renderVenting(DATA.venting);
+
+// ═══════════════════════════════════════════════════════════════════
+//  SKEW-T via skewt-js
+// ═══════════════════════════════════════════════════════════════════
+const chart = new skewt.SkewT('#skewt-container', { unit: 'kmh' });
+chart.plot(DATA.sounding);
+
+// ── Detect inversion and show badge ──────────────────────────────
+function detectInversion(sounding) {
+  // Check 1000–850 hPa range for T increasing with altitude (decreasing pressure)
+  const low = sounding.filter(d => d.press >= 850 && d.press <= 1000)
+                       .sort((a, b) => b.press - a.press);  // ascending altitude
+  for (let i = 0; i < low.length - 1; i++) {
+    if (low[i+1].temp > low[i].temp) return true;
+  }
+  return false;
+}
+
+if (detectInversion(DATA.sounding)) {
+  document.getElementById('inv-badge').style.display = 'block';
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  TEMPERATURE PROFILE  (D3 SVG)
+// ═══════════════════════════════════════════════════════════════════
+function renderTempProfile() {
+  const container = document.getElementById('temp-profile-svg').parentElement;
+  const W = container.clientWidth - 32;
+  const H = container.clientHeight - 40;
+  if (W < 10 || H < 10) return;
+
+  const svg = d3.select('#temp-profile-svg')
+    .attr('width', W)
+    .attr('height', H);
+  svg.selectAll('*').remove();
+
+  const { valley, dogtooth, white_wall } = DATA.temps;
+  const { valley: vElev, dogtooth: dElev, white_wall: wElev } = DATA.elevations;
+
+  // Expected temps
+  const expDog = expectedTemp(valley, vElev, dElev);
+  const expWW  = expectedTemp(valley, vElev, wElev);
+
+  const stations = [
+    { label: 'Golden ~785 m',    temp: valley,     elev: vElev,  exp: valley,  colour: '#f0a040', isValley: true  },
+    { label: 'Dogtooth 2060 m',  temp: dogtooth,   elev: dElev,  exp: expDog,  colour: '#7eb8f7', isValley: false },
+    { label: 'White Wall 2450 m',temp: white_wall,  elev: wElev,  exp: expWW,   colour: '#c97bf7', isValley: false },
+  ];
+
+  // Scales
+  const allTemps = stations.flatMap(s => [s.temp, s.exp]).concat([valley]);
+  const tMin = d3.min(allTemps) - 4;
+  const tMax = d3.max(allTemps) + 6;
+  const eMin = vElev - 250;
+  const eMax = wElev + 350;
+
+  const margin = { top: 20, right: 180, bottom: 36, left: 52 };
+  const iW = W - margin.left - margin.right;
+  const iH = H - margin.top  - margin.bottom;
+
+  const xSc = d3.scaleLinear().domain([tMin, tMax]).range([0, iW]);
+  const ySc = d3.scaleLinear().domain([eMin, eMax]).range([iH, 0]);
+
+  const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+  // Grid lines
+  g.append('g').attr('class', 'grid')
+    .call(d3.axisBottom(xSc).tickSize(iH).tickFormat(''))
+    .call(ax => { ax.select('.domain').remove();
+                  ax.selectAll('line').attr('stroke', '#2e2e4a').attr('y1', 0); });
+
+  // Lapse rate line
+  const lapseElevs = d3.range(vElev, wElev + 100, 20);
+  const lapseLine = d3.line()
+    .x(e => xSc(expectedTemp(valley, vElev, e)))
+    .y(e => ySc(e));
+  g.append('path')
+    .datum(lapseElevs)
+    .attr('d', lapseLine)
+    .attr('fill', 'none')
+    .attr('stroke', '#555577')
+    .attr('stroke-width', 1.5)
+    .attr('stroke-dasharray', '5,4');
+
+  // Lapse line label
+  g.append('text')
+    .attr('x', xSc(expectedTemp(valley, vElev, wElev)) - 6)
+    .attr('y', ySc(wElev) - 8)
+    .attr('fill', '#6666aa')
+    .attr('font-size', 9)
+    .attr('font-style', 'italic')
+    .attr('text-anchor', 'end')
+    .text('Normal decrease in temp with altitude');
+
+  // Valley temperature vertical reference line
+  g.append('line')
+    .attr('x1', xSc(valley)).attr('x2', xSc(valley))
+    .attr('y1', 0).attr('y2', iH)
+    .attr('stroke', '#f0a040').attr('stroke-width', 1.2)
+    .attr('stroke-dasharray', '4,3').attr('opacity', 0.7);
+
+  g.append('text')
+    .attr('x', xSc(valley) + 4).attr('y', 12)
+    .attr('fill', '#f0a040').attr('font-size', 9).attr('font-style', 'italic')
+    .text('← valley temp');
+
+  // Bars from expected → observed (mountain stations only)
+  const barH = Math.max(6, iH * 0.035);
+  stations.filter(s => !s.isValley).forEach(s => {
+    const gap = s.temp - s.exp;
+    const trueInv = s.temp > valley;
+    const lapse_anomaly = gap > 0;
+    const barCol = trueInv ? '#e05555' : lapse_anomaly ? '#f4a0b0' : '#5577aa';
+    const barAlpha = trueInv ? 0.85 : lapse_anomaly ? 0.70 : 0.40;
+
+    const x0 = xSc(Math.min(s.temp, s.exp));
+    const x1 = xSc(Math.max(s.temp, s.exp));
+    const barWidth = Math.max(x1 - x0, 2);
+
+    g.append('rect')
+      .attr('x', x0).attr('y', ySc(s.elev) - barH / 2)
+      .attr('width', barWidth).attr('height', barH)
+      .attr('fill', barCol).attr('opacity', barAlpha)
+      .attr('rx', 2);
+  });
+
+  // Dots + labels
+  stations.forEach(s => {
+    // Dot
+    g.append('circle')
+      .attr('cx', xSc(s.temp)).attr('cy', ySc(s.elev))
+      .attr('r', s.isValley ? 7 : 8)
+      .attr('fill', s.colour)
+      .attr('stroke', 'white').attr('stroke-width', 1.5);
+
+    // Label line
+    const gap = s.isValley ? null : s.temp - s.exp;
+    const trueInv = !s.isValley && s.temp > valley;
+    const lapseAnom = !s.isValley && gap > 0;
+    const labelCol = trueInv ? '#e05555' : lapseAnom ? '#f4a0b0' : s.colour;
+    const sign = gap === null ? '' : (gap > 0 ? `▲ ${Math.abs(gap).toFixed(1)}°C warmer than expected`
+                                              : `▼ ${Math.abs(gap).toFixed(1)}°C cooler than expected`);
+
+    const lx = iW + 8;
+    const ly = ySc(s.elev);
+
+    g.append('text')
+      .attr('x', lx).attr('y', ly - 4)
+      .attr('fill', labelCol).attr('font-size', 10).attr('font-weight', 700)
+      .text(`${s.temp.toFixed(1)}°C  ${s.label}`);
+
+    if (sign) {
+      g.append('text')
+        .attr('x', lx).attr('y', ly + 10)
+        .attr('fill', labelCol).attr('font-size', 8.5)
+        .text(sign);
+    }
+
+    if (s.isValley) {
+      g.append('text')
+        .attr('x', lx).attr('y', ly + 10)
+        .attr('fill', '#8888aa').attr('font-size', 8)
+        .text('(anchor for lapse line)');
+    }
+  });
+
+  // Axes
+  g.append('g').attr('transform', `translate(0,${iH})`)
+    .call(d3.axisBottom(xSc).ticks(8).tickFormat(d => d + '°C'))
+    .call(ax => { ax.select('.domain').attr('stroke', '#444');
+                  ax.selectAll('text').attr('fill', '#8888aa').attr('font-size', 9);
+                  ax.selectAll('line').attr('stroke', '#444'); });
+
+  g.append('g')
+    .call(d3.axisLeft(ySc).ticks(6).tickFormat(d => d + ' m'))
+    .call(ax => { ax.select('.domain').attr('stroke', '#444');
+                  ax.selectAll('text').attr('fill', '#8888aa').attr('font-size', 9);
+                  ax.selectAll('line').attr('stroke', '#444'); });
+
+  // Legend
+  const legData = [
+    { col: '#e05555', label: 'Mountain warmer than valley = true inversion' },
+    { col: '#f4a0b0', label: 'Warmer than lapse rate, cooler than valley' },
+    { col: '#5577aa', label: 'Cooler than lapse = normal' },
+  ];
+  const leg = g.append('g').attr('transform', `translate(0,${iH + 22})`);
+  legData.forEach((d, i) => {
+    const lx = i * (iW / 3);
+    leg.append('rect').attr('x', lx).attr('y', 0)
+       .attr('width', 12).attr('height', 8).attr('rx', 2)
+       .attr('fill', d.col).attr('opacity', 0.8);
+    leg.append('text').attr('x', lx + 16).attr('y', 8)
+       .attr('fill', '#8888aa').attr('font-size', 8)
+       .text(d.label);
+  });
+}
+
+// ─── Verdict box ───────────────────────────────────────────────────
+function renderVerdict() {
+  const { valley, dogtooth, white_wall } = DATA.temps;
+  const { valley: vElev, dogtooth: dElev, white_wall: wElev } = DATA.elevations;
+  const expDog = expectedTemp(valley, vElev, dElev);
+
+  const trueInv = dogtooth > valley || white_wall > valley;
+  const lapseWeak = (valley - dogtooth) < LAPSE_RATE * (dElev - vElev) / 1000 * 0.6;
+
+  let text, borderCol, bgCol;
+  if (trueInv) {
+    text = '🚨 There\'s a real inversion.\nDon\'t light that wood stove.';
+    borderCol = '#e05555'; bgCol = 'rgba(224,85,85,0.12)';
+  } else if (lapseWeak) {
+    text = '⚠️ No inversion yet, but the\nlapse rate is weak — smoke\nwon\'t mix well tonight.';
+    borderCol = '#f0a040'; bgCol = 'rgba(240,160,64,0.12)';
+  } else {
+    text = '✅ No inversion.\nNormal lapse rate.\nAir is mixing.';
+    borderCol = '#7dd9a0'; bgCol = 'rgba(125,217,160,0.12)';
+  }
+
+  const box = document.getElementById('verdict-box');
+  box.style.borderColor = borderCol;
+  box.style.color = borderCol;
+  box.style.background = bgCol;
+  box.style.whiteSpace = 'pre-line';
+  box.textContent = text;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  RISK BANNER
+// ═══════════════════════════════════════════════════════════════════
+function renderBanner() {
+  const score = DATA.score;
+  const label = score >= 4 ? 'HIGH' : score >= 2 ? 'MODERATE' : 'LOW';
+  const bgCol = score >= 4 ? '#8b1c1c' : score >= 2 ? '#6b3300' : '#1a4a2a';
+
+  const banner = document.getElementById('risk-banner');
+  banner.style.background = bgCol;
+
+  const hintsHtml = DATA.hints
+    .map(h => `<div class="hint-line">${h}</div>`)
+    .join('');
+
+  banner.innerHTML = `
+    <div class="risk-score-block">
+      <span class="risk-label">INVERSION RISK:&nbsp; ${label}</span>
+      <span class="risk-score-num">${score}/6 points</span>
+    </div>
+    <div class="risk-hints">${hintsHtml}</div>
+  `;
+}
+
+renderBanner();
+renderVerdict();
+
+// ─── Draw profile after layout settles ───────────────────────────
+requestAnimationFrame(() => {
+  requestAnimationFrame(renderTempProfile);
+});
+
+// Redraw on resize
+window.addEventListener('resize', () => {
+  requestAnimationFrame(renderTempProfile);
+});
+</script>
+</body>
+</html>
