@@ -17,6 +17,7 @@ import json
 import logging
 import re
 import sys
+import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional
@@ -26,9 +27,8 @@ import requests
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 
-OUTPUT_PATH  = Path("/var/www/golden/sounding.json")
-OUTPUT_PATH  = Path("./sounding.json")
-print("matz: hacking path\n");
+#this is a bit magic. bound to fail
+OUTPUT_PATH = Path(os.environ.get("GOLDEN_OUTPUT_PATH", "/var/www/golden_inversion/sounding.json"))
 
 SOUNDING_HOUR = 21          # local hour for tonight's forecast sounding
 

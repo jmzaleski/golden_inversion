@@ -20,5 +20,11 @@ export PATH="/root/.local/bin:/home/golden/.local/bin:/usr/local/bin:/usr/bin:/b
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')]  starting fetch"
 
+#really i'd like to push this magic value in from the setup scripts.
+#cant face struggling with m4 of cpp right now
+
+export GOLDEN_OUTPUT_PATH="/var/www/golden_inversion/sounding.json"  
+###test export GOLDEN_OUTPUT_PATH="/tmp/sounding.json"  
+
 cd "$APP_DIR"
 exec uv run python fetcher.py
