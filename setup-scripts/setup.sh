@@ -16,18 +16,19 @@ set -euo pipefail
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 
-APP_DIR=/opt/golden
-WEB_DIR=/var/www/golden
+APP_DIR=/opt/golden_inversion
+WEB_DIR=/var/www/golden_inversion
 LOG_FILE=/var/log/golden-fetcher.log
-APP_USER=golden
-NGINX_CONF=/etc/nginx/sites-available/golden
+APP_USER=golden_inversion
+NGINX_CONF=/etc/nginx/sites-available/golden_inversion
 
 # Repo-relative paths (resolved from wherever this script lives)
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+#REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR=$APP_DIR/setup-scripts
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
-log()  { echo "[$(date '+%H:%M:%S')]  $*"; }
+og()  { echo "[$(date '+%H:%M:%S')]  $*"; }
 ok()   { echo "  ✓  $*"; }
 fail() { echo "  ✗  $*" >&2; exit 1; }
 
@@ -39,6 +40,7 @@ require_root() {
 
 install_system() {
     require_root
+    read -p "don't do this. want to use snap instead" JUNK && exit
     log "Installing system packages..."
     apt-get update -qq
     apt-get install -y -qq nginx curl
@@ -56,6 +58,7 @@ create_user() {
     if id -u "$APP_USER" &>/dev/null; then
         ok "User '$APP_USER' already exists -- skipping"
     else
+	read -p "don't do this. test first" JUNK && exit
         useradd -r -m -s /usr/sbin/nologin "$APP_USER"
         ok "User '$APP_USER' created"
     fi
@@ -92,6 +95,7 @@ deploy_files() {
 install_nginx() {
     require_root
     log "Installing nginx config..."
+    read -p "don't do this. Nick already has" JUNK && exit
     [[ -f "$REPO_DIR/golden.nginx.conf" ]] \
         || fail "golden.nginx.conf not found in $REPO_DIR"
 
