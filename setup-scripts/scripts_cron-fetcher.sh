@@ -13,7 +13,14 @@
 
 set -euo pipefail
 
-APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if test -f $SCRIPT_DIR/setup.sh
+then
+	source setup.sh
+else
+	fail "cannot source setup.sh. exit 1"
+fi
 
 # cron's PATH is minimal — find uv wherever it might be installed
 export PATH="/root/.local/bin:/home/golden/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
