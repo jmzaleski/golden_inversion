@@ -17,9 +17,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if test -f $SCRIPT_DIR/setup.sh
 then
-	source setup.sh
+    source setup.sh
 else
-	fail "cannot source setup.sh. exit 1"
+    echo "cannot find setup.sh in $SCRIPT_DIR" >&2; exit 1
+
 fi
 
 # cron's PATH is minimal — find uv wherever it might be installed
