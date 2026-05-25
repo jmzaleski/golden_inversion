@@ -13,15 +13,7 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-if test -f $SCRIPT_DIR/setup.sh
-then
-    source setup.sh
-else
-    echo "cannot find setup.sh in $SCRIPT_DIR" >&2; exit 1
-
-fi
+APP_DIR=/opt/golden_inversion
 
 # cron's PATH is minimal — find uv wherever it might be installed
 export PATH="/root/.local/bin:/home/golden/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH"

@@ -218,3 +218,6 @@ __marimo__/
 .streamlit/secrets.toml
 /golden_inversion.png
 /files.zip
+
+# json file written by fetcher
+sounding.json

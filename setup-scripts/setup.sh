@@ -24,48 +24,52 @@ NGINX_CONF=/etc/nginx/sites-available/golden_inversion
 
 # Repo-relative paths (resolved from wherever this script lives)
 #REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_DIR=$APP_DIR/setup-scripts
+REPO_DIR=$APP_DIR
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
-og()  { echo "[$(date '+%H:%M:%S')]  $*"; }
+log()  { echo "[$(date '+%H:%M:%S')]  $*"; }
 ok()   { echo "  ✓  $*"; }
 fail() { echo "  ✗  $*" >&2; exit 1; }
 
 require_root() {
     [[ $EUID -eq 0 ]] || fail "This step must be run as root (sudo $0)"
+	echo got root
 }
 
 # ── Step functions ─────────────────────────────────────────────────────────────
 
-install_system() {
+install_nginx() {
     require_root
     read -p "don't do this. want to use snap instead" JUNK && exit
     log "Installing system packages..."
     apt-get update -qq
     apt-get install -y -qq nginx curl
     ok "nginx and curl installed"
-
-    log "Installing uv..."
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    export PATH="$HOME/.local/bin:$PATH"
-    ok "uv installed at $(which uv)"
 }
 
+
+install_uv() {
+    require_root
+    log "Installing uv packages..."
+    snap install astral-uv
+    ok "uv installed"
+}
 create_user() {
     require_root
     log "Creating app user '$APP_USER'..."
     if id -u "$APP_USER" &>/dev/null; then
         ok "User '$APP_USER' already exists -- skipping"
     else
-	read -p "don't do this. test first" JUNK && exit
+	read -p "useradd $APP_USER ?" JUNK
         useradd -r -m -s /usr/sbin/nologin "$APP_USER"
         ok "User '$APP_USER' created"
     fi
 
     log "Creating directories..."
     mkdir -p "$APP_DIR" "$WEB_DIR"
-    chown -R "$APP_USER:$APP_USER" "$APP_DIR" "$WEB_DIR"
+    # claude bug? these should NOT be owned by cron  user
+    #chown -R "$APP_USER:$APP_USER" "$APP_DIR" "$WEB_DIR"
     ok "$APP_DIR"
     ok "$WEB_DIR"
 
@@ -78,18 +82,28 @@ create_user() {
 deploy_files() {
     require_root
     log "Deploying app files..."
+    # below should come from git clone
+    #cp "$REPO_DIR/fetcher.py"               "$APP_DIR/fetcher.py"
+    #cp "$REPO_DIR/pyproject-fetcher.toml"   "$APP_DIR/pyproject.toml"
+    #cp "$REPO_DIR/scripts/cron-fetcher.sh"  "$APP_DIR/cron-fetcher.sh"
+    test -f "$APP_DIR/fetcher.py" || fail "fetcher.py"
 
-    cp "$REPO_DIR/fetcher.py"               "$APP_DIR/fetcher.py"
-    cp "$REPO_DIR/pyproject-fetcher.toml"   "$APP_DIR/pyproject.toml"
-    cp "$REPO_DIR/scripts/cron-fetcher.sh"  "$APP_DIR/cron-fetcher.sh"
-    chmod +x "$APP_DIR/cron-fetcher.sh"
+    test -f "$APP_DIR/cron-fetcher.sh" &&  chmod +x "$APP_DIR/cron-fetcher.sh"
     ok "fetcher.py, pyproject.toml, cron-fetcher.sh -> $APP_DIR"
 
     cp "$REPO_DIR/golden_inversion_v2.html" "$WEB_DIR/index.html"
     ok "index.html -> $WEB_DIR"
 
-    chown -R "$APP_USER:$APP_USER" "$APP_DIR" "$WEB_DIR"
+    #chown -R "$APP_USER:$APP_USER" "$APP_DIR" "$WEB_DIR"
     ok "Permissions set"
+    log "set up uv"
+    cd "$APP_DIR"
+    #sudo -u "$APP_USER" uv init || fail "uv init"
+    #okay "uv init"
+    sudo -u "$APP_USER" uv venv || fail "uv venv"
+    ok "uv venv"
+    sudo -u "$APP_USER" uv sync || fail "uv sync"
+    ok "uv sync"
 }
 
 install_nginx() {
@@ -113,7 +127,7 @@ install_cron() {
     require_root
     log "Installing cron job for '$APP_USER'..."
     local cron_line="*/30 * * * * $APP_DIR/cron-fetcher.sh >> $LOG_FILE 2>&1"
-
+    echo "installing cron line: $cron_line"
     if crontab -u "$APP_USER" -l 2>/dev/null | grep -qF "cron-fetcher.sh"; then
         ok "Cron entry already present -- skipping"
     else
@@ -127,8 +141,8 @@ install_cron() {
 }
 
 run_fetcher_once() {
-    log "Running fetcher once as '$APP_USER'..."
-    sudo -u "$APP_USER" "$APP_DIR/cron-fetcher.sh"
+    log "Test run of  cron script cron-fetcher  as '$APP_USER'..."
+    (cd $APP_DIR; sudo -u "$APP_USER" uv run "$APP_DIR/cron-fetcher.sh")
     ok "Done -- check $WEB_DIR/sounding.json"
 }
 
@@ -153,6 +167,12 @@ show_status() {
 }
 
 # ── Run all steps if executed directly (not sourced) ──────────────────────────
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+	echo why are we here
+	read -p "you probably don't want to run setup.sh like this. It assumes you mean it to install from scratch" JUNK
+	exit 1
+fi
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     log "=== Full install ==="
