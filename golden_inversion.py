@@ -60,7 +60,7 @@ GOLDEN_ELEV_M = 785          # CYGE Golden Airport elevation (m ASL)
 DOGTOOTH_URL = "https://www.mountainweather.ca/data/DOGSNOWSAFETY.HTM"
 WHITE_WALL_URL = "https://mountainweather.ca/data/TOP_FTP.HTM"
 DOGTOOTH_ELEV_M = 2060       # Dogtooth Snow Study Plot
-WHITE_WALL_ELEV_M = 2450     # White Wall Remote Weather Station
+WHITE_WALL_ELEV_M = 2325     # White Wall Remote Weather Station
 
 # BC Venting Index bulletin (text format, updated by ECCC/BCENV)
 VENTING_URL = "https://envistaweb.env.gov.bc.ca/aqo/files/bulletin/venting.html"
@@ -186,6 +186,33 @@ def fetch_sounding(target_hour: int) -> dict:
 
 
 def fetch_valley_temp() -> Optional[float]:
+    """
+    Current temperature at Golden Airport (CYGE) from the METAR —
+    an actual observed valley-floor reading, not a model forecast.
+    Falls back to Open-Meteo GFS if the METAR fetch fails.
+    """
+    try:
+        r = requests.get(
+            "https://aviationweather.gov/api/data/metar",
+            params={"ids": "CYGE", "format": "json"},
+            timeout=10,
+        )
+        r.raise_for_status()
+        data = r.json()
+        if data and data[0].get("temp") is not None:
+            return round(float(data[0]["temp"]), 1)
+    except Exception as exc:
+        log.warning("CYGE METAR fetch failed (%s) — falling back to Open-Meteo", exc)
+
+    # Fallback: Open-Meteo GFS grid point for Golden
+    r = requests.get("https://api.open-meteo.com/v1/forecast", params={
+        "latitude": GOLDEN_LAT, "longitude": GOLDEN_LON,
+        "current": "temperature_2m", "timezone": TIMEZONE,
+    }, timeout=15)
+    r.raise_for_status()
+    return round(float(r.json()["current"]["temperature_2m"]), 1)
+
+def fetch_valley_temp_dummy() -> Optional[float]:
     """Current 2 m temperature at Golden from Open-Meteo (°C).
 
     Swap this function for a PurpleAir average if you have sensor API keys:
