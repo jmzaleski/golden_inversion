@@ -9,7 +9,7 @@ Run by cron every 30 minutes:
     */30 * * * * cd /opt/golden && uv run python fetcher.py >> /var/log/golden-fetcher.log 2>&1
 
 No web framework, no matplotlib, no MetPy.
-Dependencies: requests, pandas  (see requirements.txt)
+Dependencies: requests, pandas  (see pyproject.toml)
 """
 
 import datetime
@@ -17,7 +17,7 @@ import json
 import logging
 import re
 import sys
-import os
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional
@@ -27,17 +27,17 @@ import requests
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 
-#this is a bit magic. bound to fail
-OUTPUT_PATH = Path(os.environ.get("GOLDEN_OUTPUT_PATH", "/var/www/golden_inversion/sounding.json"))
+OUTPUT_PATH   = Path(
+    __import__("os").environ.get("GOLDEN_OUTPUT_PATH", "/var/www/golden_inversion/sounding.json")
+)
+SOUNDING_HOUR = 21
 
-SOUNDING_HOUR = 21          # local hour for tonight's forecast sounding
-
-GOLDEN_LAT   = 51.30
-GOLDEN_LON   = -116.98
+GOLDEN_LAT    = 51.30
+GOLDEN_LON    = -116.98
 GOLDEN_ELEV_M = 785
 
 DOGTOOTH_ELEV_M   = 2060
-WHITE_WALL_ELEV_M = 2325
+WHITE_WALL_ELEV_M = 2450
 
 DOGTOOTH_URL   = "https://www.mountainweather.ca/data/DOGSNOWSAFETY.HTM"
 WHITE_WALL_URL = "https://mountainweather.ca/data/TOP_FTP.HTM"
@@ -46,6 +46,9 @@ TIMEZONE       = "America/Vancouver"
 
 PRESSURE_LEVELS = [1000, 975, 950, 925, 900, 850, 800, 700, 600, 500, 400, 300]
 LAPSE_RATE      = 6.5       # °C / km  (standard environmental)
+
+RETRY_ATTEMPTS = 2
+RETRY_DELAY    = 5          # seconds between retries
 
 logging.basicConfig(
     level=logging.INFO,
@@ -60,12 +63,51 @@ def expected_temp(valley_t: float, valley_elev: float, target_elev: float) -> fl
     return valley_t - LAPSE_RATE * (target_elev - valley_elev) / 1000.0
 
 
+def with_retry(fn, name: str):
+    """Call fn(), retrying up to RETRY_ATTEMPTS times on any exception."""
+    for attempt in range(RETRY_ATTEMPTS + 1):
+        try:
+            return fn()
+        except Exception as exc:
+            if attempt == RETRY_ATTEMPTS:
+                raise
+            log.warning("  %s attempt %d failed (%s) — retrying in %ds",
+                        name, attempt + 1, exc, RETRY_DELAY)
+            time.sleep(RETRY_DELAY)
+
+def load_previous_sounding() -> list:
+    """Return the last successfully written sounding, or empty list."""
+    try:
+        old = json.loads(OUTPUT_PATH.read_text())
+        sounding = old.get("sounding", [])
+        if sounding:
+            log.info("  using previous sounding (%d levels)", len(sounding))
+        return sounding
+    except Exception:
+        return []            
+
+def load_previous(key: str) -> Optional[float]:
+    """
+    Return the last successfully written temperature for a given key
+    ('valley', 'dogtooth', 'white_wall') from the existing sounding.json.
+    Used as last-resort fallback when all live fetches fail.
+    """
+    try:
+        old = json.loads(OUTPUT_PATH.read_text())
+        val = old.get("temps", {}).get(key)
+        if val is not None:
+            log.info("  using previous value for %s: %s°C", key, val)
+        return val
+    except Exception:
+        return None
+
+
 # ── Fetchers ───────────────────────────────────────────────────────────────────
 
-def fetch_sounding() -> list[dict]:
+def fetch_sounding() -> list:
     """
-    Returns a list of pressure-level dicts in skewt-js format:
-      {press, hght, temp, dwpt, wdir, wspd(m/s)}
+    GFS pressure-level sounding from Open-Meteo.
+    Returns list of dicts in skewt-js format: {press, hght, temp, dwpt, wdir, wspd(m/s)}
     Two requests to keep URL length reasonable.
     """
     vars_A, vars_B = [], []
@@ -102,7 +144,7 @@ def fetch_sounding() -> list[dict]:
         if t is None:
             continue
         hgt  = _v(f"geopotential_height_{p}hPa")
-        wspd = _v(f"windspeed_{p}hPa")   # km/h from Open-Meteo
+        wspd = _v(f"windspeed_{p}hPa")
         levels.append({
             "press": float(p),
             "hght":  round(float(hgt),  0) if hgt  is not None else None,
@@ -111,19 +153,27 @@ def fetch_sounding() -> list[dict]:
                          if _v(f"dewpoint_{p}hPa") is not None else None,
             "wdir":  round(float(_v(f"winddirection_{p}hPa")), 0)
                          if _v(f"winddirection_{p}hPa") is not None else None,
-            "wspd":  round(float(wspd) / 3.6, 2)   # km/h → m/s for skewt-js
+            "wspd":  round(float(wspd) / 3.6, 2)
                          if wspd is not None else None,
         })
     return levels
 
 
 def fetch_valley_temp() -> Optional[float]:
-    r = requests.get("https://api.open-meteo.com/v1/forecast", params={
-        "latitude": GOLDEN_LAT, "longitude": GOLDEN_LON,
-        "current": "temperature_2m", "timezone": TIMEZONE,
-    }, timeout=15)
+    """
+    Current temperature at Golden Airport (CYGE) from the hourly METAR —
+    a real observed valley-floor reading, not a model forecast.
+    """
+    r = requests.get(
+        "https://aviationweather.gov/api/data/metar",
+        params={"ids": "CYGE", "format": "json"},
+        timeout=10,
+    )
     r.raise_for_status()
-    return round(float(r.json()["current"]["temperature_2m"]), 1)
+    data = r.json()
+    if data and data[0].get("temp") is not None:
+        return round(float(data[0]["temp"]), 1)
+    raise ValueError("CYGE METAR returned no temperature")
 
 
 def fetch_mountain_temp(url: str) -> Optional[float]:
@@ -139,7 +189,9 @@ def fetch_mountain_temp(url: str) -> Optional[float]:
             temps.append(float(parts[3]))
         except (ValueError, IndexError):
             pass
-    return round(temps[-1], 1) if temps else None
+    if not temps:
+        raise ValueError(f"no temperature data found at {url}")
+    return round(temps[-1], 1)
 
 
 def fetch_venting() -> dict:
@@ -174,7 +226,7 @@ def fetch_venting() -> dict:
 def score(sounding: list, vi: dict,
           valley_t: Optional[float],
           dog_t:    Optional[float],
-          ww_t:     Optional[float]) -> tuple[int, list[str]]:
+          ww_t:     Optional[float]) -> tuple:
 
     points, hints = 0, []
 
@@ -217,7 +269,7 @@ def score(sounding: list, vi: dict,
 
     # C) Sounding low-level lapse
     low = [s for s in sounding if 850 <= s["press"] <= 1000]
-    low.sort(key=lambda s: s["press"], reverse=True)   # ascending altitude
+    low.sort(key=lambda s: s["press"], reverse=True)
     if len(low) >= 2:
         t_bot, t_top = low[0]["temp"], low[-1]["temp"]
         if t_top > t_bot:
@@ -238,7 +290,7 @@ def verdict(points: int,
             valley_t: Optional[float],
             dog_t:    Optional[float],
             ww_t:     Optional[float]) -> str:
-    mtn_temps = [t for t in [dog_t, ww_t] if t is not None]
+    mtn_temps  = [t for t in [dog_t, ww_t] if t is not None]
     true_inv   = valley_t is not None and any(t > valley_t for t in mtn_temps)
     lapse_weak = (
         valley_t is not None and dog_t is not None and
@@ -266,7 +318,8 @@ def main():
 
     results: dict = {}
     with ThreadPoolExecutor(max_workers=5) as ex:
-        futures = {ex.submit(fn): name for name, fn in tasks.items()}
+        futures = {ex.submit(with_retry, fn, name): name
+                   for name, fn in tasks.items()}
         for fut in as_completed(futures):
             name = futures[fut]
             try:
@@ -276,20 +329,23 @@ def main():
                 results[name] = None
                 log.warning("  ✗ %s  — %s", name, exc)
 
-    sounding  = results.get("sounding") or []
-    valley_t  = results.get("valley_t")
-    dog_t     = results.get("dog_t")
-    ww_t      = results.get("ww_t")
-    vi        = results.get("venting") or {}
+    #sounding = results.get("sounding") or []
+    sounding = results.get("sounding") or load_previous_sounding()
+    vi       = results.get("venting")  or {}
+
+    # Use previous JSON values as last resort for temperatures
+    valley_t = results.get("valley_t") or load_previous("valley")
+    dog_t    = results.get("dog_t")    or load_previous("dogtooth")
+    ww_t     = results.get("ww_t")     or load_previous("white_wall")
 
     pts, hints = score(sounding, vi, valley_t, dog_t, ww_t)
     risk_label = "HIGH" if pts >= 4 else "MODERATE" if pts >= 2 else "LOW"
 
     payload = {
-        "generated":   datetime.datetime.now().isoformat(timespec="seconds"),
+        "generated":    datetime.datetime.now().isoformat(timespec="seconds"),
         "sounding_hour": SOUNDING_HOUR,
-        "sounding":    sounding,
-        "venting":     vi,
+        "sounding":     sounding,
+        "venting":      vi,
         "temps": {
             "valley":     valley_t,
             "dogtooth":   dog_t,
@@ -300,15 +356,14 @@ def main():
             "dogtooth":   DOGTOOTH_ELEV_M,
             "white_wall": WHITE_WALL_ELEV_M,
         },
-        "score":       pts,
-        "risk":        risk_label,
-        "hints":       hints,
-        "verdict":     verdict(pts, valley_t, dog_t, ww_t),
+        "score":   pts,
+        "risk":    risk_label,
+        "hints":   hints,
+        "verdict": verdict(pts, valley_t, dog_t, ww_t),
     }
 
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-    # Write atomically: temp file → rename, so nginx never serves half-written JSON
     tmp = OUTPUT_PATH.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(payload, indent=2))
     tmp.rename(OUTPUT_PATH)
