@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Golden BC — Inversion Outlook</title>
+
+<link rel="stylesheet" href="https://unpkg.com/skewt-plus/dist/skewt.css">
+<script>window.L = window.L || null;</script>
+<script src="https://unpkg.com/skewt-plus/dist/bundle.js"></script>
+<!-- D3 v7 loaded after bundle so our profile chart gets v7, not the bundled v5 --><script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+
+<style>
+/* ── Reset & base ─────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:       #0f0f1a;
+  --panel:    #191928;
+  --border:   #2a2a40;
+  --text:     #dde0ee;
+  --muted:    #7070a0;
+  --blue:     #82b4f0;
+  --green:    #72c98a;
+  --red:      #e05050;
+  --pink:     #f0a0b0;
+  --orange:   #e09040;
+  --poor:     #b71c1c;
+  --fair:     #bf360c;
+  --good:     #1b5e20;
+  --mono:     'Courier New', monospace;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* ── Header ──────────────────────────────────────────────── */
+.hdr {
+  padding: 10px 16px 8px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  background: var(--panel);
+}
+.hdr h1 { font-size: 18px; font-weight: 700; letter-spacing: .01em; }
+.hdr .sub { font-size: 11px; color: var(--muted); font-style: italic; }
+
+/* ── Verdict bar (full-width, prominent) ─────────────────── */
+.verdict-bar {
+  padding: 10px 16px;
+  font-size: 15px;
+  font-weight: 700;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.verdict-bar .risk-pill {
+  font-size: 12px;
+  padding: 2px 10px;
+  border-radius: 20px;
+  background: rgba(255,255,255,.12);
+  letter-spacing: .08em;
+  flex-shrink: 0;
+}
+
+/* ── Main grid ───────────────────────────────────────────── */
+.main {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  grid-template-areas: "left right";
+  min-height: calc(100vh - 130px);
+}
+
+/* ── Column headers ──────────────────────────────────────── */
+.col-hdr {
+  padding: 5px 12px 4px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+}
+.col-hdr.fc  { color: var(--blue); }
+.col-hdr.cur { color: var(--green); }
+
+/* ── Left: FORECASTS ─────────────────────────────────────── */
+.col-left {
+  grid-area: left;
+  border-right: 1px dashed var(--border);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Venting panel */
+.venting {
+  background: var(--panel);
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.vi-source {
+  font-size: 9px; color: var(--muted);
+  font-style: italic; margin-bottom: 6px;
+}
+.vi-raw {
+  font-family: var(--mono);
+  font-size: 7.5px; color: #999;
+  background: #0a0a14;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 5px 7px;
+  line-height: 1.7;
+  margin-bottom: 8px;
+  white-space: pre;
+  overflow-x: auto;
+}
+.vi-divider { border: none; border-top: 1px solid var(--border); margin: 6px 0; }
+.vi-row {
+  display: flex; align-items: center;
+  gap: 8px; margin-bottom: 7px;
+}
+.vi-lbl {
+  font-size: 10px; font-weight: 700;
+  color: white; width: 76px; flex-shrink: 0;
+  letter-spacing: .05em;
+}
+.vi-badge {
+  display: inline-block;
+  padding: 3px 11px; border-radius: 4px;
+  font-size: 11px; font-weight: 700;
+  color: white; flex-shrink: 0;
+}
+.badge-poor { background: var(--poor); }
+.badge-fair { background: var(--fair); }
+.badge-good { background: var(--good); }
+.badge-na   { background: #333; }
+.vi-meaning { font-size: 9px; color: var(--muted); line-height: 1.4; }
+.vi-scale   { font-size: 8px; color: var(--muted); margin-top: 4px; text-align: center; }
+
+/* SkewT */
+.skewt-wrap {
+  flex: 1;
+  min-height: 280px;
+  position: relative;
+  overflow: hidden;
+}
+.skewt-wrap .col-hdr { border-top: 1px solid var(--border); }
+#skewt-div {
+  width: 100%;
+  height: calc(100% - 24px);
+}
+/* ── skewt-plus dark-theme overrides ─────────────────────── */
+/* skewt-plus uses compiled Less — no CSS vars; must override classes directly */
+#skewt-div .mainsvg                  { background: var(--panel) !important; }
+/* Temperature line: brighter red, full opacity */
+#skewt-div .temp                     { stroke: #e05050 !important; stroke-opacity: .95 !important; stroke-width: 2px !important; }
+/* Parcel trajectory: green, visible */
+#skewt-div .parcel                   { stroke: #72c98a !important; stroke-opacity: .75 !important; stroke-width: 1.5px !important; }
+/* Hide dewpoint and wind barbs — temp line only for this use case */
+#skewt-div .dwpt, #skewt-div .windbarb { display: none !important; }
+/* Background gridlines — very dark, almost invisible */
+#skewt-div .gridline                 { stroke: #252538 !important; stroke-opacity: .9 !important; }
+#skewt-div .tempzero                 { stroke: #444466 !important; stroke-opacity: 1 !important; stroke-width: 1px !important; }
+#skewt-div .templine                 { stroke: #2a2a48 !important; stroke-opacity: .7 !important; }
+#skewt-div .pressure                 { stroke: #222238 !important; stroke-opacity: .8 !important; }
+#skewt-div .dryadiabat               { stroke: #1e3028 !important; stroke-opacity: .8 !important; }
+#skewt-div .moistadiabat             { stroke: #1a2a38 !important; stroke-opacity: .8 !important; }
+#skewt-div .isohume                  { stroke: #1a2035 !important; stroke-opacity: .8 !important; }
+#skewt-div .elr                      { stroke: #604080 !important; stroke-opacity: .12 !important; }
+#skewt-div .sigline.surface          { stroke: #72c98a !important; }
+#skewt-div .sigline.tropopause-level { stroke: #82b4f0 !important; }
+/* Axes */
+#skewt-div .axis path,
+#skewt-div .axis line                { stroke: #363650 !important; }
+#skewt-div .axis text,
+#skewt-div .y.axis text,
+#skewt-div .x.axis text              { fill: #6666a0 !important; font-size: 8px !important; }
+#skewt-div .y.axis.hght text         { fill: #e05050 !important; font-size: 8px !important; }
+/* Tooltip focus dots */
+#skewt-div .focus.tmpc circle        { fill: #e05050 !important; }
+#skewt-div .focus.dwpc circle        { fill: transparent !important; }
+/* Interactive controls toolbar — dark theme */
+#skewt-div .controls,
+#skewt-div .range-container,
+#skewt-div .range-container-extra    { background: #0e0e1c; border-top: 1px solid var(--border);
+                                        font-size: 9px; color: var(--muted); }
+#skewt-div .controls .buttons,
+#skewt-div .range-container .buttons,
+#skewt-div .range-container-extra .buttons {
+  background: #1a1a2e; color: var(--muted);
+  border-radius: 3px; font-size: 8px; padding: 2px 6px; margin: 2px; }
+#skewt-div .controls .buttons.clicked,
+#skewt-div .range-container .buttons.clicked,
+#skewt-div .range-container-extra .buttons.clicked {
+  background: #35355a; color: var(--text); }
+#skewt-div .controls .values,
+#skewt-div .range-container .values  { background: #08080f; border-color: var(--border);
+                                        color: var(--muted); font-size: 8px; }
+#skewt-div .skewt-range-des          { color: var(--muted); }
+#skewt-div .skewt-range-val          { color: var(--text); }
+#skewt-div .skewt-ranges::-webkit-slider-runnable-track { background: #252538; }
+#skewt-div .skewt-ranges::-webkit-slider-thumb          { background: #5050a0; border-color: #6666c0; }
+/* Synthetic data warning banner */
+.synth-banner {
+  position: absolute;
+  top: 50px; left: 6px; right: 6px;
+  background: rgba(60,60,120,.22);
+  border: 1px solid #5050a0;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 8px; color: #9090d0;
+  font-weight: 700; display: none;
+  text-align: center; pointer-events: none;
+}
+.skewt-guide {
+  position: absolute;
+  bottom: 8px; right: 6px;
+  background: rgba(10,10,20,.90);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 8.5px; color: var(--muted);
+  line-height: 1.6; max-width: 155px;
+  pointer-events: none;
+}
+.skewt-guide strong { color: var(--text); display: block; margin-bottom: 2px; }
+.skewt-guide .inv   { color: var(--red); font-weight: 700; }
+.inv-badge {
+  position: absolute;
+  top: 32px; left: 6px;
+  background: rgba(224,80,80,.18);
+  border: 1px solid var(--red);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 8px; color: var(--red);
+  font-weight: 700; display: none;
+}
+
+/* ── Right: CURRENT CONDITIONS ───────────────────────────── */
+.col-right {
+  grid-area: right;
+  display: flex;
+  flex-direction: column;
+}
+.profile-wrap {
+  flex: 1;
+  padding: 12px 16px 12px;
+  min-height: 0;
+  position: relative;
+}
+#profile-svg { display: block; width: 100%; height: 100%; }
+
+/* ── Risk banner ─────────────────────────────────────────── */
+.risk-banner {
+  display: flex;
+  align-items: stretch;
+  min-height: 56px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.risk-main {
+  display: flex; align-items: center;
+  padding: 0 16px; gap: 10px;
+  border-right: 1px solid rgba(255,255,255,.1);
+  flex-shrink: 0;
+}
+.risk-lbl  { font-size: 13px; font-weight: 700; color: white; }
+.risk-num  { font-size: 10px; color: rgba(255,255,255,.6); }
+.risk-hints {
+  flex: 1; padding: 6px 14px;
+  display: flex; flex-direction: column;
+  justify-content: center; gap: 1px;
+}
+.hint { font-size: 10px; color: rgba(255,255,255,.82); line-height: 1.5; }
+.hint::before { content: '• '; opacity: .5; }
+
+/* ── Mobile ──────────────────────────────────────────────── */
+@media (max-width: 680px) {
+  .hdr h1 { font-size: 15px; }
+  .verdict-bar { font-size: 13px; padding: 8px 12px; }
+  .main {
+    grid-template-columns: 1fr;
+    grid-template-areas: "right" "left";
+    min-height: unset;
+  }
+  .col-left  { border-right: none; border-top: 2px solid var(--border); }
+  .profile-wrap { min-height: 340px; padding: 10px 10px; }
+  .skewt-wrap   { min-height: 260px; }
+  .risk-hints   { display: none; }  /* too cramped on phone */
+}
+</style>
+</head>
+<body>
+
+<!-- Data loaded via fetch() -->
+
+<!-- ════════════════════════ HTML ════════════════════════════ -->
+
+<div class="hdr">
+  <h1>Golden, BC — Temperature Inversion Outlook</h1>
+  <span class="sub" id="hdr-sub">Loading…</span>
+</div>
+
+<div class="verdict-bar" id="verdict-bar">…</div>
+
+<div class="main">
+
+  <!-- LEFT: FORECASTS -->
+  <div class="col-left">
+    <div class="col-hdr fc">Forecasts</div>
+
+    <div class="venting" id="venting"><!-- JS --></div>
+
+    <div class="skewt-wrap">
+      <div class="col-hdr fc" style="border-top:1px solid var(--border)">
+        GFS weather forecast — atmospheric sounding
+      </div>
+      <div id="skewt-div" class="skew-t"></div>
+      <div class="synth-banner" id="synth-banner">⚠ SYNTHETIC SOUNDING — Open-Meteo offline — ISA placeholder, not forecast data</div>
+      <div class="inv-badge" id="inv-badge">⚠ Inversion detected in sounding</div>
+      <div class="skewt-guide">
+        <strong>How to read</strong>
+        Red line = temperature<br>
+        at each altitude<br><br>
+        <span class="inv">INVERSION:</span> line leans<br>
+        <em>right</em> going up<br>
+        (warmer air above)<br><br>
+        NORMAL: leans <em>left</em>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: CURRENT CONDITIONS -->
+  <div class="col-right">
+    <div class="col-hdr cur">Current Conditions — Kicking Horse stations</div>
+    <div class="profile-wrap">
+      <svg id="profile-svg"></svg>
+    </div>
+  </div>
+
+</div>
+
+<div class="risk-banner" id="risk-banner"><!-- JS --></div>
+
+
+<!-- ════════════════════════ JAVASCRIPT ══════════════════════ -->
+<script>
+
+const DATA = {
+  sounding: [
+    // true inversion scenario: temp increases from 925→900 hPa
+    { press:1000, hght: 110, temp: -2.0, dwpt:  -8.0, wdir:200, wspd: 5/3.6 },
+    { press: 975, hght: 330, temp: -1.5, dwpt:  -9.0, wdir:210, wspd: 8/3.6 },
+    { press: 950, hght: 550, temp: -0.5, dwpt: -10.0, wdir:220, wspd:10/3.6 },
+    { press: 925, hght: 780, temp:  0.5, dwpt: -11.0, wdir:230, wspd:12/3.6 },
+    { press: 900, hght:1010, temp:  1.0, dwpt: -12.0, wdir:240, wspd:15/3.6 },
+    { press: 850, hght:1460, temp: -1.0, dwpt: -14.0, wdir:250, wspd:20/3.6 },
+    { press: 800, hght:1950, temp: -5.0, dwpt: -18.0, wdir:260, wspd:25/3.6 },
+    { press: 700, hght:3010, temp:-12.0, dwpt: -25.0, wdir:270, wspd:35/3.6 },
+    { press: 600, hght:4200, temp:-22.0, dwpt: -32.0, wdir:280, wspd:45/3.6 },
+    { press: 500, hght:5580, temp:-32.0, dwpt: -40.0, wdir:290, wspd:55/3.6 },
+  ],
+  venting: {
+    tonight:  { vi: 28, cat: "POOR" },
+    tomorrow: { vi: 60, cat: "GOOD" },
+    raw_line: "GOLDEN  NA/NA  NA  NA   28/POOR  NA  NA   60/GOOD  NA  NA",
+    bulletin_date: "15-JANUARY-2025"
+  },
+  temps: { valley: 2.0, dogtooth: 3.5, white_wall: 5.0 },
+  elevations: { valley: 785, dogtooth: 2060, white_wall: 2450 },
+  score: 6,
+  hints: [
+    "Venting Index POOR (28) — smoke traps easily in valleys",
+    "Valley→Dogtooth ΔT only −1.5°C (normal ≈ −8.3°C) — strong inversion",
+    "Sounding shows temperature INVERSION below 850 hPa"
+  ]
+};
+
+  
+const LAPSE = 6.5;
+let _resizeTimer;  // shared debounce handle for resize → skewt rebuild
+
+function expTemp(valleyT, valleyE, targetE) {
+  return valleyT - LAPSE * (targetE - valleyE) / 1000;
+}
+
+// ── All render logic wrapped so it runs after fetch ─────────
+function renderAll(DATA) {
+
+  // Header
+  document.getElementById('hdr-sub').textContent =
+    new Date(DATA.generated).toLocaleDateString('en-CA',
+      {weekday:'long', year:'numeric', month:'long', day:'numeric'})
+    + ' — forecast valid ' + DATA.sounding_hour + ':00 local';
+
+  // Verdict bar
+  (function() {
+    const bar = document.getElementById('verdict-bar');
+    const score = DATA.score, risk = DATA.risk;
+    bar.style.background = score >= 4 ? '#7b1111' : score >= 2 ? '#5c2800' : '#0d3318';
+    bar.innerHTML = `<span>${DATA.verdict}</span>
+      <span class="risk-pill">${risk} RISK &nbsp;${score}/6</span>`;
+  })();
+
+  // Venting panel
+  (function() {
+    const v = DATA.venting;
+    const MEANING = { POOR:'Smoke trapped — avoid burning',
+                      FAIR:'Some dispersal — burn with caution',
+                      GOOD:'Air mixing well' };
+    function row(label, d) {
+      if (!d) return `<div class="vi-row"><span class="vi-lbl">${label}</span><span class="vi-badge badge-na">N/A</span></div>`;
+      const cls = {POOR:'badge-poor',FAIR:'badge-fair',GOOD:'badge-good'}[d.cat]||'badge-na';
+      return `<div class="vi-row"><span class="vi-lbl">${label}</span>
+        <span class="vi-badge ${cls}">${d.vi} &nbsp;${d.cat}</span>
+        <span class="vi-meaning">${MEANING[d.cat]||''}</span></div>`;
+    }
+    document.getElementById('venting').innerHTML =
+      `<div class="vi-source">BC Ministry of Environment — official venting forecast</div>
+       <div class="vi-raw">           7 AM    4 PM  TOMORROW\n${'─'.repeat(34)}\n${v.raw_line||'(unavailable)'}</div>
+       <hr class="vi-divider">
+       ${row('TONIGHT:', v.today_pm || v.today_am)}
+       ${row('TOMORROW:', v.tomorrow)}
+       <div class="vi-scale">0–33 POOR &nbsp;•&nbsp; 34–54 FAIR &nbsp;•&nbsp; 55–100 GOOD</div>`;
+  })();
+
+  // SkewT — skewt-plus (rittels/skewt-js, published npm build)
+  //   • global window.SkewT constructor; D3 v5 fully bundled inside
+  //   • published package only has: .plot(), .clear(), .selectSkewt(), .removePlot()
+  //   • setParams() and parcelTrajectory() exist only on GitHub HEAD, not npm
+  //   • resize: debounced full rebuild (wipe innerHTML + recreate)
+  let skewtChart = null;
+
+  function buildSkewt() {
+    // Tear down previous instance cleanly before recreating
+    document.getElementById('skewt-div').innerHTML = '';
+
+    const chart = new SkewT('#skewt-div');
+    skewtChart = chart;
+
+    // Plot temperature only — null out dwpt/wind so library renders nothing
+    chart.plot(DATA.sounding.map(d => ({
+      press: d.press, hght: d.hght, temp: d.temp,
+      dwpt: null, wdir: null, wspd: null,
+    })));
+
+    // Synthetic data banner
+    document.getElementById('synth-banner').style.display =
+      DATA.sounding_synthetic ? 'block' : 'none';
+
+    // Inversion badge — low-level lapse check
+    const low = DATA.sounding
+      .filter(d => d.press >= 850 && d.press <= 1000)
+      .sort((a, b) => b.press - a.press);
+    document.getElementById('inv-badge').style.display =
+      (low.length >= 2 && low[low.length - 1].temp > low[0].temp) ? 'block' : 'none';
+  }
+
+  // Temperature profile
+  function drawProfile() {
+
+  const wrap = document.querySelector('.profile-wrap');
+  const W = wrap.clientWidth  - 24;
+  const H = wrap.clientHeight - 24;
+  if (W < 60 || H < 60) return;
+
+  const svg = d3.select('#profile-svg')
+    .attr('width',  W)
+    .attr('height', H);
+  svg.selectAll('*').remove();
+
+  const { valley, dogtooth, white_wall } = DATA.temps;
+  const { valley: vE, dogtooth: dE, white_wall: wE } = DATA.elevations;
+
+  const expDog = expTemp(valley, vE, dE);
+  const expWW  = expTemp(valley, vE, wE);
+
+  const stations = [
+    { label:'Golden ~785 m',     temp:valley,     elev:vE, exp:valley, col:'#e09040', isValley:true  },
+    { label:'Dogtooth 2060 m',   temp:dogtooth,   elev:dE, exp:expDog, col:'#82b4f0', isValley:false },
+    { label:'White Wall 2325 m', temp:white_wall,  elev:wE, exp:expWW,  col:'#b882f0', isValley:false },
+  ];
+
+  // X range: just wide enough to show lapse line + observed + labels
+  const allT = stations.flatMap(s => [s.temp, s.exp]);
+  const tMin = d3.min(allT) - 2;
+  const tMax = d3.max(allT) + 2;
+
+  const mar = { top:24, right:210, bottom:42, left:58 };
+  const iW  = W - mar.left - mar.right;
+  const iH  = H - mar.top  - mar.bottom;
+
+  const xSc = d3.scaleLinear().domain([tMin, tMax]).range([0, iW]);
+  const ySc = d3.scaleLinear().domain([vE - 180, wE + 280]).range([iH, 0]);
+
+  const g = svg.append('g').attr('transform', `translate(${mar.left},${mar.top})`);
+
+  // Subtle x grid
+  g.append('g')
+    .call(d3.axisBottom(xSc).tickSize(iH).tickFormat(''))
+    .attr('transform', `translate(0,0)`)
+    .call(ax => {
+      ax.select('.domain').remove();
+      ax.selectAll('line').attr('stroke','#1e1e30').attr('y1', 0);
+    });
+
+  // Lapse rate line
+  const lapseElev = d3.range(vE, wE + 50, 10);
+  g.append('path')
+    .datum(lapseElev)
+    .attr('d', d3.line()
+      .x(e => xSc(expTemp(valley, vE, e)))
+      .y(e => ySc(e)))
+    .attr('fill', 'none')
+    .attr('stroke', '#404060')
+    .attr('stroke-width', 1.5)
+    .attr('stroke-dasharray', '5,4');
+
+  // Lapse line label (positioned mid-way up the line)
+  const lapMidE = (vE + wE) / 2;
+  const lapMidT = expTemp(valley, vE, lapMidE);
+  g.append('text')
+    .attr('x', xSc(lapMidT) - 6)
+    .attr('y', ySc(lapMidE) - 7)
+    .attr('fill', '#505070')
+    .attr('font-size', 9)
+    .attr('font-style', 'italic')
+    .attr('text-anchor', 'end')
+    .text('Normal decrease with altitude');
+
+  // Valley temp vertical reference line
+  g.append('line')
+    .attr('x1', xSc(valley)).attr('x2', xSc(valley))
+    .attr('y1', 0).attr('y2', iH)
+    .attr('stroke', '#e09040').attr('stroke-width', 1)
+    .attr('stroke-dasharray', '3,4').attr('opacity', .65);
+
+  g.append('text')
+    .attr('x', xSc(valley) + 3).attr('y', 11)
+    .attr('fill', '#e09040').attr('font-size', 8.5).attr('font-style', 'italic')
+    .text('← valley temp');
+
+  // Bars + dots
+  const barH = Math.max(8, iH * 0.04);
+
+  stations.forEach(s => {
+    if (!s.isValley) {
+      const gap    = s.temp - s.exp;
+      const trueInv = s.temp > valley;
+      const lapseAnomaly = gap > 0;
+      const barCol = trueInv ? '#c03030' : lapseAnomaly ? '#c06070' : '#405880';
+      const barAlpha = trueInv ? .80 : lapseAnomaly ? .60 : .35;
+      const x0 = xSc(Math.min(s.temp, s.exp));
+      const bw = Math.max(Math.abs(xSc(s.temp) - xSc(s.exp)), 2);
+
+      g.append('rect')
+        .attr('x', x0).attr('y', ySc(s.elev) - barH/2)
+        .attr('width', bw).attr('height', barH)
+        .attr('fill', barCol).attr('opacity', barAlpha).attr('rx', 2);
+    }
+
+    // Dot
+    g.append('circle')
+      .attr('cx', xSc(s.temp)).attr('cy', ySc(s.elev))
+      .attr('r', s.isValley ? 6 : 8)
+      .attr('fill', s.col)
+      .attr('stroke', '#0f0f1a').attr('stroke-width', 1.5);
+
+    // Right-side labels
+    const lx  = iW + 8;
+    const ly  = ySc(s.elev);
+    const gap = s.isValley ? null : s.temp - s.exp;
+    const trueInv = !s.isValley && s.temp > valley;
+    const lapseAnom = !s.isValley && gap > 0;
+    const labelCol = trueInv ? '#e07070' : lapseAnom ? '#d09090' : s.col;
+
+    g.append('text')
+      .attr('x', lx).attr('y', ly - 4)
+      .attr('fill', labelCol).attr('font-size', 11).attr('font-weight', 700)
+      .text(`${s.temp.toFixed(1)}°C  ${s.label}`);
+
+    if (s.isValley) {
+      g.append('text')
+        .attr('x', lx).attr('y', ly + 10)
+        .attr('fill', '#505070').attr('font-size', 9)
+        .text('(anchor for lapse line)');
+    } else {
+      const sign = gap > 0
+        ? `▲ ${Math.abs(gap).toFixed(1)}°C warmer than expected`
+        : `▼ ${Math.abs(gap).toFixed(1)}°C cooler than expected`;
+      g.append('text')
+        .attr('x', lx).attr('y', ly + 10)
+        .attr('fill', labelCol).attr('font-size', 9)
+        .text(sign);
+    }
+  });
+
+  // X axis
+  g.append('g')
+    .attr('transform', `translate(0,${iH})`)
+    .call(d3.axisBottom(xSc).ticks(6).tickFormat(d => d + '°C'))
+    .call(ax => {
+      ax.select('.domain').attr('stroke','#333');
+      ax.selectAll('text').attr('fill','#7070a0').attr('font-size', 9);
+      ax.selectAll('line').attr('stroke','#333');
+    });
+
+  // Y axis
+  g.append('g')
+    .call(d3.axisLeft(ySc).ticks(5).tickFormat(d => d + ' m'))
+    .call(ax => {
+      ax.select('.domain').attr('stroke','#333');
+      ax.selectAll('text').attr('fill','#7070a0').attr('font-size', 9);
+      ax.selectAll('line').attr('stroke','#333');
+    });
+
+  // Legend
+  const legY = iH + 28;
+  const items = [
+    { col:'#c03030', alpha:.80, txt:'Mountain warmer than valley = true inversion' },
+    { col:'#c06070', alpha:.60, txt:'Warmer than lapse, cooler than valley'        },
+    { col:'#405880', alpha:.35, txt:'Cooler than lapse = normal'                   },
+  ];
+  const legW = iW / items.length;
+  items.forEach((item, i) => {
+    const lx = i * legW;
+    g.append('rect')
+      .attr('x', lx).attr('y', legY)
+      .attr('width', 10).attr('height', 8).attr('rx', 2)
+      .attr('fill', item.col).attr('opacity', item.alpha);
+    g.append('text')
+      .attr('x', lx + 14).attr('y', legY + 8)
+      .attr('fill','#606080').attr('font-size', 8)
+      .text(item.txt);
+  });
+  }  // end drawProfile
+
+  // Risk banner
+(function() {
+  const score = DATA.score;
+  const col   = score >= 4 ? '#5c1111' : score >= 2 ? '#452200' : '#0b2714';
+  const ban   = document.getElementById('risk-banner');
+  ban.style.background = col;
+  ban.innerHTML = `
+    <div class="risk-main">
+      <span class="risk-lbl">INVERSION RISK: ${DATA.risk}</span>
+      <span class="risk-num">${score}/6</span>
+    </div>
+    <div class="risk-hints">
+      ${DATA.hints.map(h => `<div class="hint">${h}</div>`).join('')}
+    </div>`;
+})();
+
+  // Initial render — double RAF lets the grid finish sizing before we measure
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    drawProfile();
+    buildSkewt();
+  }));
+
+  // Debounced resize: profile redraws immediately, skewt rebuilds after 150 ms idle
+  window.addEventListener('resize', () => {
+    requestAnimationFrame(drawProfile);
+    clearTimeout(_resizeTimer);
+    _resizeTimer = setTimeout(() => requestAnimationFrame(buildSkewt), 150);
+  });
+
+}  // end renderAll
+
+
+// ── Fetch sounding.json and kick off rendering ───────────────
+(async function() {
+  const hdrSub    = document.getElementById('hdr-sub');
+  const verdictBar = document.getElementById('verdict-bar');
+  hdrSub.textContent = 'Loading…';
+  try {
+    //const resp = await fetch('sounding.json');
+    //if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    //const DATA = await resp.json();
+    
+    // ── STATIC DEV MODE ──────────────────────────────────
+const DATA = {
+  "generated": "2025-05-24T21:00:00",
+  "sounding_hour": 21,
+  "sounding_synthetic": false,
+  "sounding": [
+    {"press":1000,"hght":111,"temp":8.2,"dwpt":-2.0,"wdir":180,"wspd":2.0},
+    {"press":925,"hght":762,"temp":5.5,"dwpt":-5.0,"wdir":200,"wspd":3.0},
+    {"press":850,"hght":1457,"temp":7.1,"dwpt":-8.0,"wdir":210,"wspd":4.0},
+    {"press":700,"hght":3012,"temp":-2.0,"dwpt":-15.0,"wdir":240,"wspd":8.0},
+    {"press":500,"hght":5574,"temp":-18.0,"dwpt":-28.0,"wdir":270,"wspd":15.0},
+    {"press":300,"hght":9164,"temp":-42.0,"dwpt":-55.0,"wdir":280,"wspd":25.0}
+  ],
+  "venting": {
+    "today_am": {"vi": 28, "cat": "POOR"},
+    "today_pm": {"vi": 31, "cat": "POOR"},
+    "tomorrow": {"vi": 45, "cat": "FAIR"},
+    "raw_line": "GOLDEN        28/POOR  31/POOR  45/FAIR",
+    "bulletin_date": "24-MAY-2025"
+  },
+  "temps": {"valley": 8.2, "dogtooth": 7.1, "white_wall": 6.8},
+  "elevations": {"valley": 785, "dogtooth": 2060, "white_wall": 2450},
+  "score": 4,
+  "risk": "HIGH",
+  "hints": [
+    "Venting Index POOR (31) — smoke traps easily in valleys",
+    "Sounding shows INVERSION below 850 hPa (8.2°C → 7.1°C aloft)"
+  ],
+  "verdict": "There's a real inversion. Don't light that wood stove."
+};    
+    // ── END STATIC DEV MODE ──────────────────────────────────
+    
+    renderAll(DATA);
+  } catch (err) {
+    hdrSub.textContent = '⚠ Could not load forecast data — ' + err.message;
+    verdictBar.textContent = 'Data unavailable — try refreshing';
+    verdictBar.style.background = '#333';
+    console.error('fetch sounding.json failed:', err);
+  }
+})();
+</script>
