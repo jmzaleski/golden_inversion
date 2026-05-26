@@ -75,16 +75,46 @@ def with_retry(fn, name: str):
                         name, attempt + 1, exc, RETRY_DELAY)
             time.sleep(RETRY_DELAY)
 
-def load_previous_sounding() -> list:
-    """Return the last successfully written sounding, or empty list."""
-    try:
-        old = json.loads(OUTPUT_PATH.read_text())
-        sounding = old.get("sounding", [])
-        if sounding:
-            log.info("  using previous sounding (%d levels)", len(sounding))
-        return sounding
-    except Exception:
-        return []            
+def synthetic_sounding() -> list:
+    """
+    Return an obviously-fake standard-atmosphere sounding used as a
+    safe placeholder when Open-Meteo is unreachable.
+
+    Properties that make it clearly synthetic:
+      • perfectly round temperatures (whole °C, ISA lapse rate)
+      • normal 6.5 °C/km lapse throughout — no inversion, so scoring is harmless
+      • wind speed / direction are zero
+      • every level carries  "synthetic": True
+
+    Approximate ISA heights and temps (sea-level T0 = 15 °C, Γ = 6.5 °C/km):
+    """
+    # (pressure hPa, height m, temp °C) — deliberately round numbers
+    ISA = [
+        (1000,  111,  14),
+        ( 975,  320,  13),
+        ( 950,  540,  11),
+        ( 925,  762,  10),
+        ( 900,  988,   9),
+        ( 850, 1457,   6),
+        ( 800, 1949,   2),
+        ( 700, 3012,  -5),
+        ( 600, 4206, -12),
+        ( 500, 5574, -21),
+        ( 400, 7185, -32),
+        ( 300, 9164, -45),
+    ]
+    return [
+        {
+            "press": float(p),
+            "hght":  float(h),
+            "temp":  float(t),
+            "dwpt":  float(t - 20),   # fixed 20 °C depression — obviously fake
+            "wdir":  0.0,
+            "wspd":  0.0,
+            "synthetic": True,
+        }
+        for p, h, t in ISA
+    ]
 
 def load_previous(key: str) -> Optional[float]:
     """
@@ -329,9 +359,16 @@ def main():
                 results[name] = None
                 log.warning("  ✗ %s  — %s", name, exc)
 
-    #sounding = results.get("sounding") or []
-    sounding = results.get("sounding") or load_previous_sounding()
-    vi       = results.get("venting")  or {}
+    raw_sounding = results.get("sounding")
+    if raw_sounding:
+        sounding          = raw_sounding
+        sounding_synthetic = False
+    else:
+        log.warning("Open-Meteo sounding unavailable — substituting synthetic ISA placeholder")
+        sounding          = synthetic_sounding()
+        sounding_synthetic = True
+
+    vi = results.get("venting") or {}
 
     # Use previous JSON values as last resort for temperatures
     valley_t = results.get("valley_t") or load_previous("valley")
@@ -342,9 +379,10 @@ def main():
     risk_label = "HIGH" if pts >= 4 else "MODERATE" if pts >= 2 else "LOW"
 
     payload = {
-        "generated":    datetime.datetime.now().isoformat(timespec="seconds"),
-        "sounding_hour": SOUNDING_HOUR,
-        "sounding":     sounding,
+        "generated":         datetime.datetime.now().isoformat(timespec="seconds"),
+        "sounding_hour":     SOUNDING_HOUR,
+        "sounding_synthetic": sounding_synthetic,
+        "sounding":          sounding,
         "venting":      vi,
         "temps": {
             "valley":     valley_t,
