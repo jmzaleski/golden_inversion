@@ -37,7 +37,7 @@ GOLDEN_LON   = -116.98
 GOLDEN_ELEV_M = 785
 
 DOGTOOTH_ELEV_M   = 2060
-WHITE_WALL_ELEV_M = 2450
+WHITE_WALL_ELEV_M = 2325
 
 DOGTOOTH_URL   = "https://www.mountainweather.ca/data/DOGSNOWSAFETY.HTM"
 WHITE_WALL_URL = "https://mountainweather.ca/data/TOP_FTP.HTM"

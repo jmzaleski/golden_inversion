@@ -455,7 +455,7 @@ def draw_skewt(fig: plt.Figure, sounding: dict, rect: tuple) -> None:
     stations_ref = [
         (GOLDEN_ELEV_M,    "Golden valley (785 m)", "#BF6000"),
         (DOGTOOTH_ELEV_M,  "Dogtooth (2060 m)",     "#1565C0"),
-        (WHITE_WALL_ELEV_M,"White Wall (2450 m)",    "#6A1A9A"),
+        (WHITE_WALL_ELEV_M,"White Wall (2325 m)",    "#6A1A9A"),
     ]
     for elev_m, label, colour in stations_ref:
         p_ref = elev_to_pressure(elev_m)
@@ -620,7 +620,7 @@ def draw_temp_profile(
     if dog_t is not None:
         stations.append((dog_t,    DOGTOOTH_ELEV_M,  "Dogtooth 2060 m",  "#1565C0"))
     if ww_t is not None:
-        stations.append((ww_t,     WHITE_WALL_ELEV_M,"White Wall 2450 m","#6A1A9A"))
+        stations.append((ww_t,     WHITE_WALL_ELEV_M,"White Wall 2325 m","#6A1A9A"))
 
     if not stations:
         ax.text(0.5, 0.5, "No station data available",
