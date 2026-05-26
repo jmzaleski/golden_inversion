@@ -6,7 +6,11 @@
 <title>Golden BC — Inversion Outlook</title>
 
 <link rel="stylesheet" href="https://unpkg.com/skewt-plus/dist/skewt.css">
+
+<!-- skewt-plus references Leaflet's global L (L.Browser.mobile) for touch detection.
+     Stub it so the check fails gracefully when running outside Windy/Leaflet. -->
 <script>window.L = window.L || null;</script>
+
 <script src="https://unpkg.com/skewt-plus/dist/bundle.js"></script>
 <!-- D3 v7 loaded after bundle so our profile chart gets v7, not the bundled v5 --><script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
 
@@ -108,12 +112,12 @@ html, body {
   flex-shrink: 0;
 }
 .vi-source {
-  font-size: 9px; color: var(--muted);
+  font-size: 11px; color: var(white);
   font-style: italic; margin-bottom: 6px;
 }
 .vi-raw {
   font-family: var(--mono);
-  font-size: 7.5px; color: #999;
+  font-size: 9px; color: var(white);
   background: #0a0a14;
   border: 1px solid var(--border);
   border-radius: 3px;
@@ -188,27 +192,11 @@ html, body {
 /* Tooltip focus dots */
 #skewt-div .focus.tmpc circle        { fill: #e05050 !important; }
 #skewt-div .focus.dwpc circle        { fill: transparent !important; }
-/* Interactive controls toolbar — dark theme */
+/* Hide skewt-plus interactive controls — not needed for this display */
 #skewt-div .controls,
 #skewt-div .range-container,
-#skewt-div .range-container-extra    { background: #0e0e1c; border-top: 1px solid var(--border);
-                                        font-size: 9px; color: var(--muted); }
-#skewt-div .controls .buttons,
-#skewt-div .range-container .buttons,
-#skewt-div .range-container-extra .buttons {
-  background: #1a1a2e; color: var(--muted);
-  border-radius: 3px; font-size: 8px; padding: 2px 6px; margin: 2px; }
-#skewt-div .controls .buttons.clicked,
-#skewt-div .range-container .buttons.clicked,
-#skewt-div .range-container-extra .buttons.clicked {
-  background: #35355a; color: var(--text); }
-#skewt-div .controls .values,
-#skewt-div .range-container .values  { background: #08080f; border-color: var(--border);
-                                        color: var(--muted); font-size: 8px; }
-#skewt-div .skewt-range-des          { color: var(--muted); }
-#skewt-div .skewt-range-val          { color: var(--text); }
-#skewt-div .skewt-ranges::-webkit-slider-runnable-track { background: #252538; }
-#skewt-div .skewt-ranges::-webkit-slider-thumb          { background: #5050a0; border-color: #6666c0; }
+#skewt-div .range-container-extra,
+#skewt-div .checkbox-container        { display: none !important; }
 /* Synthetic data warning banner */
 .synth-banner {
   position: absolute;
@@ -355,37 +343,6 @@ html, body {
 <!-- ════════════════════════ JAVASCRIPT ══════════════════════ -->
 <script>
 
-const DATA = {
-  sounding: [
-    // true inversion scenario: temp increases from 925→900 hPa
-    { press:1000, hght: 110, temp: -2.0, dwpt:  -8.0, wdir:200, wspd: 5/3.6 },
-    { press: 975, hght: 330, temp: -1.5, dwpt:  -9.0, wdir:210, wspd: 8/3.6 },
-    { press: 950, hght: 550, temp: -0.5, dwpt: -10.0, wdir:220, wspd:10/3.6 },
-    { press: 925, hght: 780, temp:  0.5, dwpt: -11.0, wdir:230, wspd:12/3.6 },
-    { press: 900, hght:1010, temp:  1.0, dwpt: -12.0, wdir:240, wspd:15/3.6 },
-    { press: 850, hght:1460, temp: -1.0, dwpt: -14.0, wdir:250, wspd:20/3.6 },
-    { press: 800, hght:1950, temp: -5.0, dwpt: -18.0, wdir:260, wspd:25/3.6 },
-    { press: 700, hght:3010, temp:-12.0, dwpt: -25.0, wdir:270, wspd:35/3.6 },
-    { press: 600, hght:4200, temp:-22.0, dwpt: -32.0, wdir:280, wspd:45/3.6 },
-    { press: 500, hght:5580, temp:-32.0, dwpt: -40.0, wdir:290, wspd:55/3.6 },
-  ],
-  venting: {
-    tonight:  { vi: 28, cat: "POOR" },
-    tomorrow: { vi: 60, cat: "GOOD" },
-    raw_line: "GOLDEN  NA/NA  NA  NA   28/POOR  NA  NA   60/GOOD  NA  NA",
-    bulletin_date: "15-JANUARY-2025"
-  },
-  temps: { valley: 2.0, dogtooth: 3.5, white_wall: 5.0 },
-  elevations: { valley: 785, dogtooth: 2060, white_wall: 2450 },
-  score: 6,
-  hints: [
-    "Venting Index POOR (28) — smoke traps easily in valleys",
-    "Valley→Dogtooth ΔT only −1.5°C (normal ≈ −8.3°C) — strong inversion",
-    "Sounding shows temperature INVERSION below 850 hPa"
-  ]
-};
-
-  
 const LAPSE = 6.5;
 let _resizeTimer;  // shared debounce handle for resize → skewt rebuild
 
@@ -423,9 +380,10 @@ function renderAll(DATA) {
       return `<div class="vi-row"><span class="vi-lbl">${label}</span>
         <span class="vi-badge ${cls}">${d.vi} &nbsp;${d.cat}</span>
         <span class="vi-meaning">${MEANING[d.cat]||''}</span></div>`;
-    }
+      }
+     
     document.getElementById('venting').innerHTML =
-      `<div class="vi-source">BC Ministry of Environment — official venting forecast</div>
+      `<div class="vi-source">CALIBRATED VENTILATION INDEX HRDPS SMOKE CONTROL FORECAST FOR BC from ENVIRONMENT CANADA HRDPS MODEL</div>
        <div class="vi-raw">           7 AM    4 PM  TOMORROW\n${'─'.repeat(34)}\n${v.raw_line||'(unavailable)'}</div>
        <hr class="vi-divider">
        ${row('TONIGHT:', v.today_pm || v.today_am)}
@@ -447,7 +405,7 @@ function renderAll(DATA) {
     const chart = new SkewT('#skewt-div');
     skewtChart = chart;
 
-    // Plot temperature only — null out dwpt/wind so library renders nothing
+    // Plot temperature only — null out dwpt/wind so library renders nothing for them
     chart.plot(DATA.sounding.map(d => ({
       press: d.press, hght: d.hght, temp: d.temp,
       dwpt: null, wdir: null, wspd: null,
