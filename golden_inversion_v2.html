@@ -247,60 +247,7 @@ html, body {
 </head>
 <body>
 
-<!-- ════════════════════════ DATA ════════════════════════════
-     This JSON block matches fetcher.py output exactly.
-     In production: replace with a JS fetch() of sounding.json
-     ═══════════════════════════════════════════════════════ -->
-<script>
-const DATA = {
-  "generated":    "2026-05-24T21:00:00",
-  "sounding_hour": 21,
-
-  /* GFS pressure-level sounding for Golden — true inversion scenario */
-  "sounding": [
-    {"press":1000,"hght":110, "temp":-2.0,"dwpt":-8.0, "wdir":200,"wspd":1.39},
-    {"press":975, "hght":330, "temp":-1.5,"dwpt":-9.0, "wdir":210,"wspd":2.22},
-    {"press":950, "hght":550, "temp":-0.5,"dwpt":-10.0,"wdir":220,"wspd":2.78},
-    {"press":925, "hght":780, "temp": 0.5,"dwpt":-11.0,"wdir":230,"wspd":3.33},
-    {"press":900, "hght":1010,"temp": 1.0,"dwpt":-12.0,"wdir":240,"wspd":4.17},
-    {"press":850, "hght":1460,"temp":-1.0,"dwpt":-14.0,"wdir":250,"wspd":5.56},
-    {"press":800, "hght":1950,"temp":-5.0,"dwpt":-18.0,"wdir":260,"wspd":6.94},
-    {"press":700, "hght":3010,"temp":-12.0,"dwpt":-25.0,"wdir":270,"wspd":9.72},
-    {"press":600, "hght":4200,"temp":-22.0,"dwpt":-32.0,"wdir":280,"wspd":12.5},
-    {"press":500, "hght":5580,"temp":-32.0,"dwpt":-40.0,"wdir":290,"wspd":15.3}
-  ],
-
-  /* BC ENV venting index */
-  "venting": {
-    "today_am":  null,
-    "today_pm":  {"vi": 28, "cat": "POOR"},
-    "tomorrow":  {"vi": 60, "cat": "GOOD"},
-    "raw_line":  "GOLDEN  NA/NA  NA  NA   28/POOR  NA  NA   60/GOOD  NA  NA",
-    "bulletin_date": "24-MAY-2026"
-  },
-
-  /* Observed temperatures */
-  "temps": {
-    "valley":     2.0,
-    "dogtooth":   3.5,
-    "white_wall": 5.0
-  },
-  "elevations": {
-    "valley":     785,
-    "dogtooth":   2060,
-    "white_wall": 2450
-  },
-
-  "score":   6,
-  "risk":    "HIGH",
-  "hints": [
-    "Venting Index POOR (28) — smoke traps easily in valleys",
-    "Valley→Dogtooth ΔT only −1.5°C (normal ≈ −8.3°C) — strong inversion signal",
-    "Sounding shows INVERSION below 850 hPa (−2.0°C → 1.0°C aloft)"
-  ],
-  "verdict": "There's a real inversion. Don't light that wood stove."
-};
-</script>
+<!-- Data loaded via fetch() -->
 
 <!-- ════════════════════════ HTML ════════════════════════════ -->
 
@@ -352,87 +299,67 @@ const DATA = {
 
 <!-- ════════════════════════ JAVASCRIPT ══════════════════════ -->
 <script>
-const LAPSE = 6.5;  // °C per km
+const LAPSE = 6.5;
 
 function expTemp(valleyT, valleyE, targetE) {
   return valleyT - LAPSE * (targetE - valleyE) / 1000;
 }
 
-// ── Header ─────────────────────────────────────────────────
-document.getElementById('hdr-sub').textContent =
-  new Date(DATA.generated).toLocaleDateString('en-CA',
-    {weekday:'long', year:'numeric', month:'long', day:'numeric'})
-  + ' — forecast valid ' + DATA.sounding_hour + ':00 local';
+// ── All render logic wrapped so it runs after fetch ─────────
+function renderAll(DATA) {
 
-// ── Verdict bar ────────────────────────────────────────────
-(function() {
-  const bar   = document.getElementById('verdict-bar');
-  const score = DATA.score;
-  const risk  = DATA.risk;
-  const col   = score >= 4 ? '#7b1111' : score >= 2 ? '#5c2800' : '#0d3318';
-  bar.style.background = col;
-  bar.innerHTML = `
-    <span>${DATA.verdict}</span>
-    <span class="risk-pill">${risk} RISK &nbsp;${score}/6</span>`;
-})();
+  // Header
+  document.getElementById('hdr-sub').textContent =
+    new Date(DATA.generated).toLocaleDateString('en-CA',
+      {weekday:'long', year:'numeric', month:'long', day:'numeric'})
+    + ' — forecast valid ' + DATA.sounding_hour + ':00 local';
 
-// ── Venting panel ──────────────────────────────────────────
-(function() {
-  const v = DATA.venting;
-  const MEANING = {
-    POOR: 'Smoke trapped — avoid burning',
-    FAIR: 'Some dispersal — burn with caution',
-    GOOD: 'Air mixing well',
-  };
-  function row(label, data) {
-    if (!data) return `
-      <div class="vi-row">
-        <span class="vi-lbl">${label}</span>
-        <span class="vi-badge badge-na">N/A</span>
-      </div>`;
-    const cls = {POOR:'badge-poor',FAIR:'badge-fair',GOOD:'badge-good'}[data.cat]||'badge-na';
-    return `
-      <div class="vi-row">
-        <span class="vi-lbl">${label}</span>
-        <span class="vi-badge ${cls}">${data.vi} &nbsp;${data.cat}</span>
-        <span class="vi-meaning">${MEANING[data.cat]||''}</span>
-      </div>`;
-  }
-  document.getElementById('venting').innerHTML = `
-    <div class="vi-source">BC Ministry of Environment — official venting forecast</div>
-    <div class="vi-raw">           7 AM    4 PM  TOMORROW\n${'─'.repeat(34)}\n${v.raw_line||'(unavailable)'}</div>
-    <hr class="vi-divider">
-    ${row('TONIGHT:', v.today_pm || v.today_am)}
-    ${row('TOMORROW:', v.tomorrow)}
-    <div class="vi-scale">0–33 POOR &nbsp;•&nbsp; 34–54 FAIR &nbsp;•&nbsp; 55–100 GOOD</div>`;
-})();
+  // Verdict bar
+  (function() {
+    const bar = document.getElementById('verdict-bar');
+    const score = DATA.score, risk = DATA.risk;
+    bar.style.background = score >= 4 ? '#7b1111' : score >= 2 ? '#5c2800' : '#0d3318';
+    bar.innerHTML = `<span>${DATA.verdict}</span>
+      <span class="risk-pill">${risk} RISK &nbsp;${score}/6</span>`;
+  })();
 
-// ── SkewT ──────────────────────────────────────────────────
-(function() {
-  // Strip dewpoint and wind to show temperature only
-  const soundingTempOnly = DATA.sounding.map(d => ({
-    press: d.press,
-    hght:  d.hght,
-    temp:  d.temp,
-    dwpt:  null,      // skewt-js skips null lines
-    wdir:  null,
-    wspd:  null,
-  }));
+  // Venting panel
+  (function() {
+    const v = DATA.venting;
+    const MEANING = { POOR:'Smoke trapped — avoid burning',
+                      FAIR:'Some dispersal — burn with caution',
+                      GOOD:'Air mixing well' };
+    function row(label, d) {
+      if (!d) return `<div class="vi-row"><span class="vi-lbl">${label}</span><span class="vi-badge badge-na">N/A</span></div>`;
+      const cls = {POOR:'badge-poor',FAIR:'badge-fair',GOOD:'badge-good'}[d.cat]||'badge-na';
+      return `<div class="vi-row"><span class="vi-lbl">${label}</span>
+        <span class="vi-badge ${cls}">${d.vi} &nbsp;${d.cat}</span>
+        <span class="vi-meaning">${MEANING[d.cat]||''}</span></div>`;
+    }
+    document.getElementById('venting').innerHTML =
+      `<div class="vi-source">BC Ministry of Environment — official venting forecast</div>
+       <div class="vi-raw">           7 AM    4 PM  TOMORROW\n${'─'.repeat(34)}\n${v.raw_line||'(unavailable)'}</div>
+       <hr class="vi-divider">
+       ${row('TONIGHT:', v.today_pm || v.today_am)}
+       ${row('TOMORROW:', v.tomorrow)}
+       <div class="vi-scale">0–33 POOR &nbsp;•&nbsp; 34–54 FAIR &nbsp;•&nbsp; 55–100 GOOD</div>`;
+  })();
 
-  const chart = new skewt.SkewT('#skewt-div', { unit: 'kmh' });
-  chart.plot(soundingTempOnly);
+  // SkewT
+  (function() {
+    const soundingTempOnly = DATA.sounding.map(d =>
+      ({press:d.press, hght:d.hght, temp:d.temp, dwpt:null, wdir:null, wspd:null}));
+    const chart = new skewt.SkewT('#skewt-div', { unit: 'kmh' });
+    chart.plot(soundingTempOnly);
+    const low = DATA.sounding.filter(d => d.press >= 850 && d.press <= 1000)
+                              .sort((a,b) => b.press - a.press);
+    if (low.length >= 2 && low[low.length-1].temp > low[0].temp)
+      document.getElementById('inv-badge').style.display = 'block';
+  })();
 
-  // Detect inversion
-  const low = DATA.sounding
-    .filter(d => d.press >= 850 && d.press <= 1000)
-    .sort((a,b) => b.press - a.press);  // ascending altitude
-  const hasInv = low.length >= 2 &&
-    low[low.length-1].temp > low[0].temp;
-  if (hasInv) document.getElementById('inv-badge').style.display = 'block';
-})();
+  // Temperature profile
+  function drawProfile() {
 
-// ── Temperature profile (D3) ───────────────────────────────
-function drawProfile() {
   const wrap = document.querySelector('.profile-wrap');
   const W = wrap.clientWidth  - 24;
   const H = wrap.clientHeight - 24;
@@ -607,9 +534,9 @@ function drawProfile() {
       .attr('fill','#606080').attr('font-size', 8)
       .text(item.txt);
   });
-}
+  }  // end drawProfile
 
-// ── Risk banner ────────────────────────────────────────────
+  // Risk banner
 (function() {
   const score = DATA.score;
   const col   = score >= 4 ? '#5c1111' : score >= 2 ? '#452200' : '#0b2714';
@@ -625,9 +552,28 @@ function drawProfile() {
     </div>`;
 })();
 
-// ── Draw after layout settles ──────────────────────────────
-requestAnimationFrame(() => requestAnimationFrame(drawProfile));
-window.addEventListener('resize', () => requestAnimationFrame(drawProfile));
+  // Draw profile after layout settles; re-draw on resize
+  requestAnimationFrame(() => requestAnimationFrame(drawProfile));
+  window.addEventListener('resize', () => requestAnimationFrame(drawProfile));
+
+}  // end renderAll
+
+
+// ── Fetch sounding.json and kick off rendering ───────────────
+(async function() {
+  const hdrSub    = document.getElementById('hdr-sub');
+  const verdictBar = document.getElementById('verdict-bar');
+  hdrSub.textContent = 'Loading…';
+  try {
+    const resp = await fetch('sounding.json');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const DATA = await resp.json();
+    renderAll(DATA);
+  } catch (err) {
+    hdrSub.textContent = '⚠ Could not load forecast data — ' + err.message;
+    verdictBar.textContent = 'Data unavailable — try refreshing';
+    verdictBar.style.background = '#333';
+    console.error('fetch sounding.json failed:', err);
+  }
+})();
 </script>
-</body>
-</html>
