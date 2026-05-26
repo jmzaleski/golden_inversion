@@ -8,8 +8,9 @@
 <link rel="stylesheet" href="https://unpkg.com/skewt-plus/dist/skewt.css">
 
 <!-- skewt-plus references Leaflet's global L (L.Browser.mobile) for touch detection.
-     Stub it so the check fails gracefully when running outside Windy/Leaflet. -->
-<script>window.L = window.L || null;</script>
+     Stub it so the check fails gracefully when running outside Windy/Leaflet. 
+     <script>window.L = window.L || null;</script>
+     DUMMY DATA    -->
 
 <script src="https://unpkg.com/skewt-plus/dist/bundle.js"></script>
 <!-- D3 v7 loaded after bundle so our profile chart gets v7, not the bundled v5 --><script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
@@ -640,11 +641,13 @@ function renderAll(DATA) {
   const verdictBar = document.getElementById('verdict-bar');
   hdrSub.textContent = 'Loading…';
   try {
-    //const resp = await fetch('sounding.json');
-    //if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    //const DATA = await resp.json();
+    const resp = await fetch('sounding.json');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const DATA = await resp.json();
     
-    // ── STATIC DEV MODE ──────────────────────────────────
+    // ── STATIC DEV MODE DUMMY DATA
+    ──────────────────────────────────
+/*    
 const DATA = {
   "generated": "2025-05-24T21:00:00",
   "sounding_hour": 21,
@@ -674,6 +677,7 @@ const DATA = {
   ],
   "verdict": "There's a real inversion. Don't light that wood stove."
 };    
+*/
     // ── END STATIC DEV MODE ──────────────────────────────────
     
     renderAll(DATA);
