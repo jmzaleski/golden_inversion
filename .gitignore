@@ -221,3 +221,7 @@ __marimo__/
 
 # json file written by fetcher
 sounding.json
+/.DS_Store
+/golden_inversion_v3.html.~1~
+/setup-scripts/#setup.sh#
+/failed-sounding.json
