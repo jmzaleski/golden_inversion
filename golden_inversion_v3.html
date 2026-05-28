@@ -12,6 +12,8 @@
      <script>window.L = window.L || null;</script>
      DUMMY DATA    -->
 
+<script>window.L = window.L || null;</script>
+     
 <script src="https://unpkg.com/skewt-plus/dist/bundle.js"></script>
 <!-- D3 v7 loaded after bundle so our profile chart gets v7, not the bundled v5 --><script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
 
@@ -637,35 +639,143 @@ function renderAll(DATA) {
 // ── Fetch sounding.json and kick off rendering ───────────────
 async function fetchSounding() {
   const IS_DEV = ['localhost', '127.0.0.1', ''].includes(location.hostname);
-  if (IS_DEV) return {
-    "generated": "2025-05-24T21:00:00",
-    "sounding_hour": 21,
-    "sounding_synthetic": false,
-    "sounding": [
-      {"press":1000,"hght":111, "temp":8.2, "dwpt":-2.0, "wdir":180,"wspd":2.0},
-      {"press":925, "hght":762, "temp":5.5, "dwpt":-5.0, "wdir":200,"wspd":3.0},
-      {"press":850, "hght":1457,"temp":7.1, "dwpt":-8.0, "wdir":210,"wspd":4.0},
-      {"press":700, "hght":3012,"temp":-2.0,"dwpt":-15.0,"wdir":240,"wspd":8.0},
-      {"press":500, "hght":5574,"temp":-18.0,"dwpt":-28.0,"wdir":270,"wspd":15.0},
-      {"press":300, "hght":9164,"temp":-42.0,"dwpt":-55.0,"wdir":280,"wspd":25.0}
-    ],
-    "venting": {
-      "today_am": {"vi": 28, "cat": "POOR"},
-      "today_pm": {"vi": 31, "cat": "POOR"},
-      "tomorrow":  {"vi": 45, "cat": "FAIR"},
-      "raw_line": "GOLDEN        28/POOR  31/POOR  45/FAIR",
-      "bulletin_date": "24-MAY-2025"
+    if (IS_DEV) {
+        window.L = window.L || null;
+        return {
+  "generated": "2026-05-28T02:00:43",
+  "sounding_hour": 21,
+  "sounding_synthetic": false,
+  "sounding": [
+    {
+      "press": 1000.0,
+      "hght": 39.0,
+      "temp": 28.7,
+      "dwpt": 17.3,
+      "wdir": 124.0,
+      "wspd": 0.36
     },
-    "temps":      {"valley": 8.2, "dogtooth": 7.1, "white_wall": 6.8},
-    "elevations": {"valley": 785, "dogtooth": 2060, "white_wall": 2450}, //INVERSTION!
-    "score": 4,
-    "risk": "HIGH",
-    "hints": [
-      "Venting Index POOR (31) — smoke traps easily in valleys",
-      "Sounding shows INVERSION below 850 hPa (8.2°C → 7.1°C aloft)"
-    ],
-    "verdict": "There's a real inversion. Don't light that wood stove."
-  };
+    {
+      "press": 975.0,
+      "hght": 239.0,
+      "temp": 27.3,
+      "dwpt": 16.0,
+      "wdir": 124.0,
+      "wspd": 0.36
+    },
+    {
+      "press": 950.0,
+      "hght": 468.0,
+      "temp": 25.8,
+      "dwpt": 14.6,
+      "wdir": 124.0,
+      "wspd": 0.39
+    },
+    {
+      "press": 925.0,
+      "hght": 703.0,
+      "temp": 24.3,
+      "dwpt": 13.2,
+      "wdir": 124.0,
+      "wspd": 0.42
+    },
+    {
+      "press": 900.0,
+      "hght": 942.0,
+      "temp": 22.7,
+      "dwpt": 12.0,
+      "wdir": 108.0,
+      "wspd": 0.36
+    },
+    {
+      "press": 850.0,
+      "hght": 1437.0,
+      "temp": 19.6,
+      "dwpt": 9.1,
+      "wdir": 108.0,
+      "wspd": 0.39
+    },
+    {
+      "press": 800.0,
+      "hght": 1956.0,
+      "temp": 16.9,
+      "dwpt": 5.8,
+      "wdir": 167.0,
+      "wspd": 4.28
+    },
+    {
+      "press": 700.0,
+      "hght": 3076.0,
+      "temp": 7.8,
+      "dwpt": -0.3,
+      "wdir": 193.0,
+      "wspd": 8.33
+    },
+    {
+      "press": 600.0,
+      "hght": 4323.0,
+      "temp": -2.4,
+      "dwpt": -12.4,
+      "wdir": 217.0,
+      "wspd": 10.86
+    },
+    {
+      "press": 500.0,
+      "hght": 5741.0,
+      "temp": -12.6,
+      "dwpt": -25.1,
+      "wdir": 225.0,
+      "wspd": 11.78
+    },
+    {
+      "press": 400.0,
+      "hght": 7404.0,
+      "temp": -24.2,
+      "dwpt": -34.4,
+      "wdir": 217.0,
+      "wspd": 16.19
+    },
+    {
+      "press": 300.0,
+      "hght": 9434.0,
+      "temp": -40.0,
+      "dwpt": -48.9,
+      "wdir": 198.0,
+      "wspd": 16.44
+    }
+  ],
+  "venting": {
+    "today_am": null,
+    "today_pm": {
+      "vi": 31,
+      "cat": "POOR"
+    },
+    "tomorrow": {
+      "vi": 39,
+      "cat": "FAIR"
+    },
+    "raw_line": "GOLDEN               NA/NA      NA      NA      31/POOR  NA     NA      39/FAIR  NA     NA",
+    "bulletin_date": "27-MAY-2026"
+  },
+  "temps": {
+    "valley": 26.0,
+    "dogtooth": 11.0,
+    "white_wall": 13.7
+  },
+  "elevations": {
+    "valley": 785,
+    "dogtooth": 2060,
+    "white_wall": 2450
+  },
+  "score": 2,
+  "risk": "MODERATE",
+  "hints": [
+    "Venting Index POOR (31) \u2014 smoke traps easily in valleys",
+    "Valley\u2192Dogtooth (2060 m) \u0394T 15.0\u00b0C \u2248 normal (8.3\u00b0C)",
+    "Normal lapse below 850 hPa (28.7\u00b0C \u2192 19.6\u00b0C)"
+  ],
+  "verdict": "No inversion. Normal lapse rate. Air is mixing."
+    
+  }};
 
   const r = await fetch('sounding.json');
   if (!r.ok) throw new Error('HTTP ' + r.status);
